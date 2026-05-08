@@ -365,7 +365,7 @@ export default {
 .station-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 .station-hero {
@@ -377,31 +377,29 @@ export default {
 
 .station-hero h2 {
   margin: 0;
-  font-size: 28px;
+  font-size: 20px;
+  line-height: 28px;
 }
 
 .station-hero p {
-  margin: 8px 0 0;
-  color: #64748b;
-  line-height: 1.7;
-  max-width: 720px;
+  display: none;
 }
 
 .hero-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .station-grid {
   display: grid;
   grid-template-columns: 1.4fr 0.8fr;
-  gap: 20px;
+  gap: 12px;
 }
 
 .section-title {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .station-form-card,
@@ -415,15 +413,16 @@ export default {
 .result-stack {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .policy-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 10px 12px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
   background: #f8fafc;
 }
 
@@ -434,10 +433,11 @@ export default {
 .result-hero {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 18px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #f8fafc;
 }
 
 .result-label {

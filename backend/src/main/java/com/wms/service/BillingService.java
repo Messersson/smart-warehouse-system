@@ -2,6 +2,7 @@ package com.wms.service;
 
 import com.wms.common.BusinessException;
 import com.wms.dto.BillingStatementGenerateRequest;
+import com.wms.entity.BaseEntity;
 import com.wms.entity.BillingContract;
 import com.wms.entity.BillingRule;
 import com.wms.entity.BillingStatement;
@@ -75,6 +76,10 @@ public class BillingService {
         if (contract.getStatus() == null || contract.getStatus().isBlank()) {
             contract.setStatus("ACTIVE");
         }
+        if (contract.getId() != null) {
+            billingContractRepository.findById(contract.getId())
+                    .ifPresent(existing -> preserveAuditFields(contract, existing));
+        }
         return billingContractRepository.save(contract);
     }
 
@@ -85,6 +90,10 @@ public class BillingService {
         }
         if (rule.getUnitPrice() == null) {
             rule.setUnitPrice(BigDecimal.ZERO);
+        }
+        if (rule.getId() != null) {
+            billingRuleRepository.findById(rule.getId())
+                    .ifPresent(existing -> preserveAuditFields(rule, existing));
         }
         return billingRuleRepository.save(rule);
     }
@@ -242,5 +251,10 @@ public class BillingService {
 
     private BigDecimal defaultQty(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private void preserveAuditFields(BaseEntity target, BaseEntity existing) {
+        target.setCreatedAt(existing.getCreatedAt());
+        target.setUpdatedAt(existing.getUpdatedAt());
     }
 }

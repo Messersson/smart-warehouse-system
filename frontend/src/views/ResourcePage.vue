@@ -2,16 +2,17 @@
   <div class="page-card">
     <div class="page-toolbar">
       <div>
-        <h2 style="margin: 0">{{ config.title }}</h2>
-        <div style="color: #64748b; margin-top: 6px">{{ labels.description }}</div>
+        <h2 class="resource-title">{{ config.title }}</h2>
+        <div class="resource-description">{{ labels.description }}</div>
       </div>
-      <div>
+      <div class="toolbar-actions">
         <el-input
           v-model="keyword"
           :placeholder="labels.search"
-          style="width: 220px; margin-right: 12px"
+          class="search-input"
           clearable
         />
+        <el-button :loading="loading" @click="initPage">{{ labels.refresh }}</el-button>
         <el-button type="primary" @click="openCreate">{{ labels.create }}</el-button>
       </div>
     </div>
@@ -54,7 +55,13 @@
       </div>
     </div>
 
-    <el-table :data="filteredRows" stripe border>
+    <el-table
+      v-loading="loading"
+      :data="filteredRows"
+      :empty-text="emptyText"
+      stripe
+      border
+    >
       <el-table-column
         v-for="column in config.columns"
         :key="column.prop"
@@ -69,20 +76,32 @@
       <el-table-column :label="labels.actions" width="180" fixed="right">
         <template slot-scope="scope">
           <el-button type="text" @click="openEdit(scope.row)">{{ labels.edit }}</el-button>
-          <el-button type="text" class="text-danger" @click="handleDelete(scope.row)">{{ labels.delete }}</el-button>
+          <el-button
+            type="text"
+            class="text-danger"
+            :loading="deletingId === scope.row.id"
+            @click="handleDelete(scope.row)"
+          >
+            {{ labels.delete }}
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="760px">
-      <el-form :model="form" label-width="110px">
+    <el-dialog
+      :title="dialogTitle"
+      :visible.sync="dialogVisible"
+      :close-on-click-modal="!submitting"
+      width="760px"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-row :gutter="16">
           <el-col
             v-for="field in config.fields"
             :key="field.prop"
             :span="field.type === 'textarea' ? 24 : 12"
           >
-            <el-form-item :label="field.label">
+            <el-form-item :label="field.label" :prop="field.prop">
               <el-input
                 v-if="field.type === 'text'"
                 v-model="form[field.prop]"
@@ -135,8 +154,8 @@
         </el-row>
       </el-form>
       <span slot="footer">
-        <el-button @click="dialogVisible = false">{{ labels.cancel }}</el-button>
-        <el-button type="primary" @click="submit">{{ labels.save }}</el-button>
+        <el-button :disabled="submitting" @click="dialogVisible = false">{{ labels.cancel }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="submit">{{ labels.save }}</el-button>
       </span>
     </el-dialog>
   </div>
@@ -149,6 +168,7 @@ import resourceConfig from '../config/resource-config'
 const labels = {
   description: '\u7ef4\u62a4\u4e1a\u52a1\u4e3b\u6570\u636e\uff0c\u4e3a\u4ed3\u50a8\u4f5c\u4e1a\u4e0e\u9884\u8b66\u63d0\u4f9b\u57fa\u7840\u6863\u6848\u3002',
   search: '\u641c\u7d22\u5173\u952e\u5b57',
+  refresh: '\u5237\u65b0',
   create: '\u65b0\u589e',
   edit: '\u7f16\u8f91',
   delete: '\u5220\u9664',
@@ -158,6 +178,7 @@ const labels = {
   select: '\u8bf7\u9009\u62e9',
   updateSuccess: '\u66f4\u65b0\u6210\u529f',
   createSuccess: '\u521b\u5efa\u6210\u529f',
+  loadFailed: '\u52a0\u8f7d\u6570\u636e\u5931\u8d25',
   saveFailed: '\u4fdd\u5b58\u5931\u8d25',
   deleteConfirmTitle: '\u63d0\u793a',
   deleteConfirmSuffix: '\u8bb0\u5f55\u5417\uff1f',
@@ -165,7 +186,10 @@ const labels = {
   deleteFailed: '\u5220\u9664\u5931\u8d25',
   yes: '\u662f',
   no: '\u5426',
+  noData: '\u6682\u65e0\u6570\u636e',
+  noSearchResults: '\u6ca1\u6709\u5339\u914d\u7684\u6570\u636e',
   inputPrefix: '\u8bf7\u8f93\u5165',
+  selectPrefix: '\u8bf7\u9009\u62e9',
   pendingWarehouseTitle: '\u5f85\u914d\u7f6e\u4ed3\u5e93',
   pendingWarehouseSubtitle: '\u8fd9\u4e9b\u4ed3\u5e93\u5df2\u7ecf\u521b\u5efa\u6210\u529f\uff0c\u4f46\u8fd8\u6ca1\u6709\u5efa\u7b2c\u4e00\u4e2a\u5e93\u4f4d\u3002',
   createFirstLocation: '\u65b0\u589e\u9996\u4e2a\u5e93\u4f4d'
@@ -178,6 +202,9 @@ export default {
       rows: [],
       lookups: {},
       keyword: '',
+      loading: false,
+      submitting: false,
+      deletingId: null,
       dialogVisible: false,
       form: {},
       labels
@@ -212,6 +239,27 @@ export default {
         .map(item => item.warehouseName || item.warehouseCode || `ID:${item.id}`)
         .join(', ')
       return `${names} \u8fd8\u6ca1\u6709\u5e93\u4f4d\uff0c\u6240\u4ee5\u4e0d\u4f1a\u51fa\u73b0\u5728\u5e93\u4f4d\u5217\u8868\u3001\u5e93\u5b58\u5217\u8868\u548c\u4e0a\u4e0b\u67b6\u5e93\u4f4d\u9009\u9879\u91cc\u3002\u5148\u4e3a\u8fd9\u4e9b\u4ed3\u5e93\u65b0\u589e\u5e93\u4f4d\u5373\u53ef\u3002`
+    },
+    rules() {
+      const result = {}
+      const fields = this.config.fields || []
+      fields.forEach(field => {
+        if (!field.required) {
+          return
+        }
+        const isSelect = field.type === 'select' || field.type === 'lookup-select'
+        result[field.prop] = [
+          {
+            required: true,
+            message: `${isSelect ? labels.selectPrefix : labels.inputPrefix}${field.label}`,
+            trigger: isSelect ? 'change' : 'blur'
+          }
+        ]
+      })
+      return result
+    },
+    emptyText() {
+      return this.keyword ? labels.noSearchResults : labels.noData
     }
   },
   watch: {
@@ -225,7 +273,14 @@ export default {
   methods: {
     async initPage() {
       this.resetForm()
-      await Promise.all([this.fetchLookups(), this.fetchRows()])
+      this.loading = true
+      try {
+        await Promise.all([this.fetchLookups(), this.fetchRows()])
+      } catch (error) {
+        this.$message.error(error.message || labels.loadFailed)
+      } finally {
+        this.loading = false
+      }
     },
     async fetchLookups() {
       const response = await get('/lookups', { _ts: Date.now() })
@@ -239,25 +294,39 @@ export default {
       this.form = { ...(this.config.defaults || {}) }
     },
     async openCreate() {
-      await this.refreshLookupsIfNeeded()
+      if (!(await this.refreshLookupsSafely())) {
+        return
+      }
       this.resetForm()
       if (this.resourceKey === 'locations' && this.warehousesWithoutLocations.length === 1) {
         this.form.warehouseId = this.warehousesWithoutLocations[0].id
       }
       this.dialogVisible = true
+      this.clearFormValidation()
     },
     async openCreateForWarehouse(warehouse) {
-      await this.refreshLookupsIfNeeded()
+      if (!(await this.refreshLookupsSafely())) {
+        return
+      }
       this.resetForm()
       this.form.warehouseId = warehouse.id
       this.dialogVisible = true
+      this.clearFormValidation()
     },
     async openEdit(row) {
-      await this.refreshLookupsIfNeeded()
+      if (!(await this.refreshLookupsSafely())) {
+        return
+      }
       this.form = JSON.parse(JSON.stringify(row))
       this.dialogVisible = true
+      this.clearFormValidation()
     },
     async submit() {
+      const valid = await this.validateForm()
+      if (!valid) {
+        return
+      }
+      this.submitting = true
       try {
         if (this.form.id) {
           await put(`${this.config.endpoint}/${this.form.id}`, this.form)
@@ -270,6 +339,8 @@ export default {
         await this.fetchRows()
       } catch (error) {
         this.$message.error(error.message || labels.saveFailed)
+      } finally {
+        this.submitting = false
       }
     },
     async handleDelete(row) {
@@ -279,6 +350,7 @@ export default {
           labels.deleteConfirmTitle,
           { type: 'warning' }
         )
+        this.deletingId = row.id
         await remove(`${this.config.endpoint}/${row.id}`)
         this.$message.success(labels.deleteSuccess)
         await this.fetchRows()
@@ -286,6 +358,8 @@ export default {
         if (error !== 'cancel') {
           this.$message.error(error.message || labels.deleteFailed)
         }
+      } finally {
+        this.deletingId = null
       }
     },
     async refreshLookupsIfNeeded() {
@@ -294,6 +368,31 @@ export default {
       if (hasLookupField || hasLookupColumn) {
         await this.fetchLookups()
       }
+    },
+    async refreshLookupsSafely() {
+      try {
+        await this.refreshLookupsIfNeeded()
+        return true
+      } catch (error) {
+        this.$message.error(error.message || labels.loadFailed)
+        return false
+      }
+    },
+    validateForm() {
+      return new Promise(resolve => {
+        if (!this.$refs.formRef) {
+          resolve(true)
+          return
+        }
+        this.$refs.formRef.validate(valid => resolve(valid))
+      })
+    },
+    clearFormValidation() {
+      this.$nextTick(() => {
+        if (this.$refs.formRef) {
+          this.$refs.formRef.clearValidate()
+        }
+      })
     },
     buildPlaceholder(label) {
       return `${labels.inputPrefix}${label}`
@@ -316,10 +415,34 @@ export default {
 <style scoped>
 .pending-warehouse-panel {
   margin-bottom: 16px;
-  padding: 18px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #f8fafc 0%, #eef6ff 100%);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 16px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #d8dee6;
+}
+
+.resource-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.resource-description {
+  color: #6b7280;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-input {
+  width: 220px;
 }
 
 .pending-warehouse-head {
@@ -346,9 +469,9 @@ export default {
 
 .pending-warehouse-card {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: 8px;
   background: #ffffff;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid #d8dee6;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -364,5 +487,16 @@ export default {
   color: #64748b;
   font-size: 13px;
   word-break: break-all;
+}
+
+@media (max-width: 760px) {
+  .toolbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search-input {
+    width: 100%;
+  }
 }
 </style>

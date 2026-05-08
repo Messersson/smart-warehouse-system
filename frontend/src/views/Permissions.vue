@@ -87,6 +87,7 @@
             <el-form-item label="状态">
               <el-select v-model="userForm.status" style="width: 100%">
                 <el-option label="启用" value="ACTIVE" />
+                <el-option label="待启用" value="PENDING" />
                 <el-option label="停用" value="INACTIVE" />
               </el-select>
             </el-form-item>
@@ -201,7 +202,7 @@ export default {
   },
   methods: {
     statusText(status) {
-      const map = { ACTIVE: '启用', INACTIVE: '停用' }
+      const map = { ACTIVE: '启用', PENDING: '待启用', INACTIVE: '停用' }
       return map[status] || status
     },
     async fetchOverview() {

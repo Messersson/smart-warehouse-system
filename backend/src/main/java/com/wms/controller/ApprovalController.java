@@ -4,6 +4,7 @@ import com.wms.common.ApiResponse;
 import com.wms.dto.ApprovalDecisionRequest;
 import com.wms.dto.ApprovalSubmitRequest;
 import com.wms.service.ApprovalService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,17 +26,17 @@ public class ApprovalController {
     }
 
     @PostMapping("/submit")
-    public ApiResponse<?> submit(@RequestBody ApprovalSubmitRequest request) {
+    public ApiResponse<?> submit(@Valid @RequestBody ApprovalSubmitRequest request) {
         return ApiResponse.ok(approvalService.submit(request));
     }
 
     @PostMapping("/{id}/approve")
-    public ApiResponse<?> approve(@PathVariable Long id, @RequestBody ApprovalDecisionRequest request) {
+    public ApiResponse<?> approve(@PathVariable Long id, @Valid @RequestBody ApprovalDecisionRequest request) {
         return ApiResponse.ok(approvalService.approve(id, request));
     }
 
     @PostMapping("/{id}/reject")
-    public ApiResponse<?> reject(@PathVariable Long id, @RequestBody ApprovalDecisionRequest request) {
+    public ApiResponse<?> reject(@PathVariable Long id, @Valid @RequestBody ApprovalDecisionRequest request) {
         return ApiResponse.ok(approvalService.reject(id, request));
     }
 }

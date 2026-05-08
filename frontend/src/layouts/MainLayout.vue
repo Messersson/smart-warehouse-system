@@ -2,47 +2,99 @@
   <div class="layout-shell">
     <aside class="layout-sidebar">
       <div class="brand-block">
-        <div class="brand-title">仓储管理平台</div>
-        <div class="brand-subtitle">运营、预警、驿站、柜机与扫码一体化</div>
+        <div class="brand-mark">W</div>
+        <div>
+          <div class="brand-title">仓储管理平台</div>
+          <div class="brand-subtitle">WMS Enterprise</div>
+        </div>
       </div>
+
       <el-menu
         :default-active="$route.path"
         router
         class="layout-menu"
-        background-color="transparent"
-        text-color="#dbeafe"
+        background-color="#0b1220"
+        text-color="#b7c0cf"
         active-text-color="#ffffff"
       >
-        <el-menu-item v-if="canAccess('/dashboard')" index="/dashboard">驾驶舱</el-menu-item>
+        <el-menu-item v-if="canAccess('/dashboard')" index="/dashboard">
+          <i class="el-icon-s-home"></i>
+          <span slot="title">驾驶舱</span>
+        </el-menu-item>
         <el-submenu v-if="visibleMasterMenus.length" index="master">
-          <template slot="title">基础资料</template>
+          <template slot="title">
+            <i class="el-icon-menu"></i>
+            <span>基础资料</span>
+          </template>
           <el-menu-item v-for="item in visibleMasterMenus" :key="item.path" :index="item.path">
             {{ item.label }}
           </el-menu-item>
         </el-submenu>
-        <el-menu-item v-if="canAccess('/inbounds')" index="/inbounds">入库管理</el-menu-item>
-        <el-menu-item v-if="canAccess('/station-inbound', ['/inbounds'])" index="/station-inbound">驿站/柜机入库</el-menu-item>
-        <el-menu-item v-if="canAccess('/pda', ['/inbounds', '/outbounds', '/stocks'])" index="/pda">PDA扫码台</el-menu-item>
-        <el-menu-item v-if="canAccess('/outbounds')" index="/outbounds">出库管理</el-menu-item>
-        <el-menu-item v-if="canAccess('/stocks')" index="/stocks">库存管理</el-menu-item>
-        <el-menu-item v-if="canAccess('/alerts')" index="/alerts">预警中心</el-menu-item>
-        <el-menu-item v-if="canAccess('/permissions')" index="/permissions">权限管理</el-menu-item>
-        <el-menu-item v-if="canAccess('/stock-takes')" index="/stock-takes">盘点管理</el-menu-item>
-        <el-menu-item v-if="canAccess('/billing')" index="/billing">计费结算</el-menu-item>
-        <el-menu-item v-if="canAccess('/approvals')" index="/approvals">审批中心</el-menu-item>
-        <el-menu-item v-if="canAccess('/exceptions')" index="/exceptions">异常工单</el-menu-item>
+        <el-menu-item v-if="canAccess('/inbounds')" index="/inbounds">
+          <i class="el-icon-download"></i>
+          <span slot="title">入库管理</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/station-inbound', ['/inbounds'])" index="/station-inbound">
+          <i class="el-icon-office-building"></i>
+          <span slot="title">驿站入库</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/pda', ['/inbounds', '/outbounds', '/stocks'])" index="/pda">
+          <i class="el-icon-full-screen"></i>
+          <span slot="title">PDA 扫码</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/outbounds')" index="/outbounds">
+          <i class="el-icon-upload2"></i>
+          <span slot="title">出库管理</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/stocks')" index="/stocks">
+          <i class="el-icon-box"></i>
+          <span slot="title">库存管理</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/alerts')" index="/alerts">
+          <i class="el-icon-warning-outline"></i>
+          <span slot="title">预警中心</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/permissions')" index="/permissions">
+          <i class="el-icon-user"></i>
+          <span slot="title">权限管理</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/stock-takes')" index="/stock-takes">
+          <i class="el-icon-document-checked"></i>
+          <span slot="title">盘点管理</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/billing')" index="/billing">
+          <i class="el-icon-tickets"></i>
+          <span slot="title">计费结算</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/approvals')" index="/approvals">
+          <i class="el-icon-finished"></i>
+          <span slot="title">审批中心</span>
+        </el-menu-item>
+        <el-menu-item v-if="canAccess('/exceptions')" index="/exceptions">
+          <i class="el-icon-document-delete"></i>
+          <span slot="title">异常工单</span>
+        </el-menu-item>
       </el-menu>
     </aside>
 
     <div class="layout-main">
       <header class="layout-header">
-        <div>
+        <div class="header-heading">
           <div class="header-title">{{ $route.meta.title || '仓储管理平台' }}</div>
-          <div class="header-subtitle">覆盖仓库作业、驿站履约、柜机滞留预警、短信反馈与手持扫码。</div>
+          <div class="header-path">
+            <span>运营中心</span>
+            <i>/</i>
+            <span>{{ $route.meta.title || '工作台' }}</span>
+          </div>
         </div>
         <div class="header-user">
-          <span>{{ currentUser.displayName || currentUser.username || '管理员' }}</span>
-          <el-button type="text" @click="logout">退出登录</el-button>
+          <div class="header-chip">企业版</div>
+          <div class="user-avatar">{{ userInitial }}</div>
+          <div class="user-meta">
+            <div class="user-name">{{ currentUser.displayName || currentUser.username || '管理员' }}</div>
+            <div class="user-role">{{ currentUser.roleCode || 'ADMIN' }}</div>
+          </div>
+          <el-button size="mini" @click="logout">退出</el-button>
         </div>
       </header>
 
@@ -73,6 +125,10 @@ export default {
         return {}
       }
     },
+    userInitial() {
+      const name = this.currentUser.displayName || this.currentUser.username || 'A'
+      return name.slice(0, 1).toUpperCase()
+    },
     menuPaths() {
       return this.currentUser.menuPaths || []
     },
@@ -102,65 +158,143 @@ export default {
 .layout-shell {
   display: flex;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(14, 165, 233, 0.18), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.12), transparent 25%),
-    #f3f7fb;
+  background: #f3f5f9;
 }
 
 .layout-sidebar {
-  width: 260px;
-  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-  color: #fff;
-  padding: 20px 16px;
-  box-shadow: 12px 0 28px rgba(15, 23, 42, 0.12);
+  width: 232px;
+  flex: 0 0 232px;
+  background: #0b1220;
+  color: #ffffff;
+  border-right: 1px solid #101827;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 10px rgba(15, 23, 42, 0.12);
 }
 
 .brand-block {
-  padding: 10px 12px 20px;
+  height: 64px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.brand-title {
-  font-size: 24px;
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 700;
 }
 
+.brand-title {
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
 .brand-subtitle {
+  margin-top: 2px;
   font-size: 12px;
-  color: #93c5fd;
-  margin-top: 6px;
+  line-height: 16px;
+  color: #8390a4;
 }
 
 .layout-menu {
+  flex: 1;
   border-right: none;
+  padding: 10px 8px;
+  overflow-y: auto;
+}
+
+.layout-menu i {
+  color: #8390a4;
+}
+
+::v-deep .layout-menu .el-menu-item,
+::v-deep .layout-menu .el-submenu__title {
+  height: 40px;
+  line-height: 40px;
+  border-radius: 8px;
+  margin: 3px 0;
+}
+
+::v-deep .layout-menu .el-menu-item.is-active {
+  background: #2563eb;
+  color: #ffffff !important;
+  font-weight: 650;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
+}
+
+::v-deep .layout-menu .el-menu-item.is-active i {
+  color: #ffffff;
+}
+
+::v-deep .layout-menu .el-menu-item:hover,
+::v-deep .layout-menu .el-submenu__title:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+::v-deep .layout-menu .el-submenu.is-active > .el-submenu__title {
+  color: #ffffff !important;
+}
+
+::v-deep .layout-menu .el-submenu .el-menu-item {
+  height: 36px;
+  line-height: 36px;
+  min-width: 0;
+  padding-left: 42px !important;
 }
 
 .layout-main {
+  min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
 }
 
 .layout-header {
-  height: 80px;
+  height: 64px;
   padding: 0 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.header-heading {
+  min-width: 0;
 }
 
 .header-title {
-  font-size: 22px;
+  color: #172033;
+  font-size: 19px;
+  line-height: 24px;
   font-weight: 700;
 }
 
-.header-subtitle {
-  font-size: 13px;
-  color: #64748b;
-  margin-top: 4px;
+.header-path {
+  margin-top: 2px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-path i {
+  color: #c0c8d4;
+  font-style: normal;
 }
 
 .header-user {
@@ -169,8 +303,53 @@ export default {
   gap: 12px;
 }
 
+.header-chip {
+  height: 26px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e6f0ff;
+  color: #1d4ed8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.user-meta {
+  min-width: 96px;
+}
+
+.user-name {
+  color: #172033;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 650;
+}
+
+.user-role {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .layout-content {
-  padding: 24px;
+  min-height: 0;
+  flex: 1;
+  padding: 18px 20px;
+  overflow: auto;
 }
 
 @media (max-width: 960px) {
@@ -180,6 +359,33 @@ export default {
 
   .layout-sidebar {
     width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .brand-block {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .layout-menu {
+    max-height: 320px;
+  }
+
+  .layout-header {
+    height: auto;
+    min-height: 64px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .header-user {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .layout-content {
+    padding: 12px;
   }
 }
 </style>

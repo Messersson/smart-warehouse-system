@@ -1,83 +1,234 @@
-html, body, #app {
+html,
+body,
+#app {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: #f5f7fa;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  background: #f3f5f9;
   color: #1f2937;
+  font-size: 14px;
+  letter-spacing: 0;
 }
 
 * {
   box-sizing: border-box;
 }
 
+body {
+  overflow: hidden;
+}
+
+a {
+  color: inherit;
+}
+
 .page-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 18px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.045);
 }
 
 .page-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.page-toolbar h2,
+.page-toolbar h3 {
+  margin: 0;
+  color: #1f2937;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.page-toolbar > div:first-child > div {
+  color: #667085 !important;
+  margin-top: 4px !important;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .grid-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
 }
 
 .metric-card {
-  padding: 20px;
-  border-radius: 14px;
-  color: #fff;
   min-height: 118px;
+  padding: 16px 18px;
+  border: 1px solid #e2e8f0;
+  border-top: 3px solid #2563eb;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1f2937;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+}
+
+.metric-card.tone-teal {
+  border-left-color: #0f766e;
+}
+
+.metric-card.tone-amber {
+  border-left-color: #b45309;
+}
+
+.metric-card.tone-indigo {
+  border-left-color: #4f46e5;
+}
+
+.metric-card.tone-red {
+  border-left-color: #b91c1c;
+}
+
+.metric-card.tone-cyan {
+  border-left-color: #0e7490;
 }
 
 .metric-title {
-  font-size: 14px;
-  opacity: 0.9;
+  color: #667085;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .metric-value {
-  font-size: 30px;
+  color: #101828;
+  font-size: 28px;
   font-weight: 700;
+  line-height: 36px;
 }
 
 .metric-subtitle {
+  color: #667085;
   font-size: 12px;
-  opacity: 0.8;
+  line-height: 18px;
 }
 
 .two-column {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 14px;
 }
 
 .text-danger {
-  color: #f56c6c;
+  color: #b91c1c;
 }
 
 .text-warning {
-  color: #e6a23c;
+  color: #b45309;
 }
 
 .text-success {
-  color: #67c23a;
+  color: #0f766e;
+}
+
+.el-button {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.el-button--primary {
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
+.el-button--primary:focus,
+.el-button--primary:hover {
+  background-color: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.el-button--text {
+  color: #2563eb;
+}
+
+.el-input__inner,
+.el-textarea__inner {
+  border-radius: 8px;
+  border-color: #d0d5dd;
+  color: #1f2937;
+}
+
+.el-input__inner:focus,
+.el-textarea__inner:focus {
+  border-color: #2563eb;
+}
+
+.el-table {
+  color: #172033;
+}
+
+.el-table th.el-table__cell {
+  background: #f9fafb;
+  color: #475467;
+  font-weight: 650;
+}
+
+.el-table td.el-table__cell,
+.el-table th.el-table__cell {
+  padding: 9px 0;
+}
+
+.el-table__row:hover > td.el-table__cell {
+  background: #f8fbff !important;
+}
+
+.el-table--border,
+.el-table--group,
+.el-table td.el-table__cell,
+.el-table th.el-table__cell.is-leaf {
+  border-color: #edf1f6;
+}
+
+.el-dialog {
+  border-radius: 10px;
+}
+
+.el-dialog__header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.el-dialog__body {
+  padding: 18px 20px;
+}
+
+.el-dialog__footer {
+  padding: 12px 20px 16px;
+  border-top: 1px solid #edf1f6;
+}
+
+.el-tabs__item {
+  font-weight: 600;
+}
+
+.el-alert {
+  border-radius: 8px;
 }
 
 @media (max-width: 960px) {
+  body {
+    overflow: auto;
+  }
+
+  .page-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .two-column {
     grid-template-columns: 1fr;
   }

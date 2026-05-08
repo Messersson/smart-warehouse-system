@@ -5,6 +5,7 @@ import com.wms.dto.BillingStatementGenerateRequest;
 import com.wms.entity.BillingContract;
 import com.wms.entity.BillingRule;
 import com.wms.service.BillingService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -56,7 +57,7 @@ public class BillingController {
     }
 
     @PostMapping("/statements/generate")
-    public ApiResponse<?> generate(@RequestBody BillingStatementGenerateRequest request) {
+    public ApiResponse<?> generate(@Valid @RequestBody BillingStatementGenerateRequest request) {
         return ApiResponse.ok(billingService.generateStatement(request));
     }
 

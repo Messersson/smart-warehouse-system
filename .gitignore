@@ -4,6 +4,7 @@ backend/target/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.vite-dev*.log
 
 # IDE
 .idea/
@@ -13,3 +14,4 @@ frontend/dist/
 # OS
 Thumbs.db
 Desktop.ini
+.start-project-state.json

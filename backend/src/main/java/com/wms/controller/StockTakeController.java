@@ -4,6 +4,7 @@ import com.wms.common.ApiResponse;
 import com.wms.dto.StockTakeCountRequest;
 import com.wms.dto.StockTakeCreateRequest;
 import com.wms.service.StockTakeService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,12 +31,12 @@ public class StockTakeController {
     }
 
     @PostMapping
-    public ApiResponse<?> create(@RequestBody StockTakeCreateRequest request) {
+    public ApiResponse<?> create(@Valid @RequestBody StockTakeCreateRequest request) {
         return ApiResponse.ok(stockTakeService.create(request));
     }
 
     @PostMapping("/{id}/count")
-    public ApiResponse<?> count(@PathVariable Long id, @RequestBody StockTakeCountRequest request) {
+    public ApiResponse<?> count(@PathVariable Long id, @Valid @RequestBody StockTakeCountRequest request) {
         return ApiResponse.ok(stockTakeService.count(id, request));
     }
 

@@ -6,6 +6,7 @@ import com.wms.entity.Menu;
 import com.wms.entity.Role;
 import com.wms.entity.User;
 import com.wms.service.PermissionService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,13 +30,13 @@ public class PermissionController {
 
     @PostMapping("/users")
     public ApiResponse<?> createUser(@RequestBody User user) {
-        return ApiResponse.ok(permissionService.saveUser(user));
+        return ApiResponse.ok(permissionService.toUserView(permissionService.saveUser(user)));
     }
 
     @PutMapping("/users/{id}")
     public ApiResponse<?> updateUser(@PathVariable Long id, @RequestBody User user) {
         user.setId(id);
-        return ApiResponse.ok(permissionService.saveUser(user));
+        return ApiResponse.ok(permissionService.toUserView(permissionService.saveUser(user)));
     }
 
     @PostMapping("/roles")
@@ -61,7 +62,7 @@ public class PermissionController {
     }
 
     @PostMapping("/roles/{roleId}/menus")
-    public ApiResponse<?> saveRoleMenus(@PathVariable Long roleId, @RequestBody RoleMenuRequest request) {
+    public ApiResponse<?> saveRoleMenus(@PathVariable Long roleId, @Valid @RequestBody RoleMenuRequest request) {
         permissionService.saveRoleMenus(roleId, request);
         return ApiResponse.ok("saved", null);
     }

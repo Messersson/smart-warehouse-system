@@ -1,6 +1,7 @@
 import Vue from 'vue'
 import Router from 'vue-router'
 import Login from '../views/Login.vue'
+import Register from '../views/Register.vue'
 import MainLayout from '../layouts/MainLayout.vue'
 import Dashboard from '../views/Dashboard.vue'
 import ResourcePage from '../views/ResourcePage.vue'
@@ -22,6 +23,11 @@ const routes = [
   {
     path: '/login',
     component: Login,
+    meta: { public: true }
+  },
+  {
+    path: '/register',
+    component: Register,
     meta: { public: true }
   },
   {

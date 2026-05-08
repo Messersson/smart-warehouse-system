@@ -256,24 +256,23 @@ export default {
   width: min(920px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 .pda-header h2 {
   margin: 0;
-  font-size: 28px;
+  font-size: 20px;
+  line-height: 28px;
 }
 
 .pda-header p {
-  margin: 8px 0 0;
-  color: #64748b;
-  line-height: 1.7;
+  display: none;
 }
 
 .scan-bar {
   display: grid;
   grid-template-columns: 1fr auto auto;
-  gap: 12px;
+  gap: 8px;
 }
 
 .result-card {
@@ -287,9 +286,10 @@ export default {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 16px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #fef3c7 0%, #eff6ff 100%);
+  padding: 14px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #f8fafc;
 }
 
 .entity-type {
@@ -307,15 +307,16 @@ export default {
 .action-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 16px;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
   background: #f8fafc;
 }
 
 .action-title,
 .section-title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -340,9 +341,9 @@ export default {
 }
 
 .history-chip {
-  border: none;
-  border-radius: 14px;
-  background: #f8fafc;
+  border: 1px solid #d8dee6;
+  border-radius: 6px;
+  background: #ffffff;
   padding: 10px 14px;
   display: flex;
   flex-direction: column;

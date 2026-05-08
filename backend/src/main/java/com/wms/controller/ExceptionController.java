@@ -3,6 +3,7 @@ package com.wms.controller;
 import com.wms.common.ApiResponse;
 import com.wms.dto.ExceptionTicketRequest;
 import com.wms.service.ExceptionService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,7 +26,7 @@ public class ExceptionController {
     }
 
     @PostMapping
-    public ApiResponse<?> create(@RequestBody ExceptionTicketRequest request) {
+    public ApiResponse<?> create(@Valid @RequestBody ExceptionTicketRequest request) {
         return ApiResponse.ok(exceptionService.create(request));
     }
 

@@ -36,10 +36,10 @@ export default {
       { prop: 'status', label: '状态' }
     ],
     fields: [
-      { prop: 'warehouseCode', label: '仓库编码', type: 'text' },
-      { prop: 'warehouseName', label: '仓库名称', type: 'text' },
-      { prop: 'warehouseType', label: '仓库类型', type: 'select', options: warehouseTypeOptions },
-      { prop: 'sceneType', label: '业务场景', type: 'select', options: warehouseSceneOptions },
+      { prop: 'warehouseCode', label: '仓库编码', type: 'text', required: true },
+      { prop: 'warehouseName', label: '仓库名称', type: 'text', required: true },
+      { prop: 'warehouseType', label: '仓库类型', type: 'select', options: warehouseTypeOptions, required: true },
+      { prop: 'sceneType', label: '业务场景', type: 'select', options: warehouseSceneOptions, required: true },
       { prop: 'contactName', label: '联系人', type: 'text' },
       { prop: 'contactPhone', label: '联系电话', type: 'text' },
       { prop: 'province', label: '省份', type: 'text' },
@@ -51,7 +51,7 @@ export default {
       { prop: 'smsReminderIntervalMinutes', label: '短信重发间隔(分钟)', type: 'number' },
       { prop: 'autoAssignLocation', label: '自动分配库位', type: 'switch' },
       { prop: 'scanMode', label: '扫码模式', type: 'select', options: warehouseScanOptions },
-      { prop: 'status', label: '状态', type: 'select', options: statusOptions },
+      { prop: 'status', label: '状态', type: 'select', options: statusOptions, required: true },
       { prop: 'remark', label: '备注', type: 'textarea' }
     ],
     defaults: {
@@ -79,10 +79,10 @@ export default {
       { prop: 'status', label: '状态' }
     ],
     fields: [
-      { prop: 'warehouseId', label: '所属仓库', type: 'lookup-select', lookup: 'warehouses', valueProp: 'id', labelProp: 'warehouseName' },
+      { prop: 'warehouseId', label: '所属仓库', type: 'lookup-select', lookup: 'warehouses', valueProp: 'id', labelProp: 'warehouseName', required: true },
       { prop: 'zoneName', label: '库区', type: 'text' },
-      { prop: 'locationCode', label: '库位编码', type: 'text' },
-      { prop: 'locationName', label: '库位名称', type: 'text' },
+      { prop: 'locationCode', label: '库位编码', type: 'text', required: true },
+      { prop: 'locationName', label: '库位名称', type: 'text', required: true },
       { prop: 'aisleNo', label: '通道', type: 'text' },
       { prop: 'shelfNo', label: '货架', type: 'text' },
       { prop: 'layerNo', label: '层', type: 'text' },
@@ -90,7 +90,7 @@ export default {
       { prop: 'capacityQty', label: '容量', type: 'number' },
       { prop: 'usedQty', label: '已用', type: 'number' },
       { prop: 'pickable', label: '可拣选', type: 'switch' },
-      { prop: 'status', label: '状态', type: 'select', options: statusOptions },
+      { prop: 'status', label: '状态', type: 'select', options: statusOptions, required: true },
       { prop: 'remark', label: '备注', type: 'textarea' }
     ],
     defaults: {
@@ -112,14 +112,14 @@ export default {
       { prop: 'status', label: '状态' }
     ],
     fields: [
-      { prop: 'ownerCode', label: '货主编码', type: 'text' },
-      { prop: 'ownerName', label: '货主名称', type: 'text' },
-      { prop: 'ownerType', label: '货主类型', type: 'select', options: [{ label: '自营', value: 'SELF' }, { label: '第三方', value: 'THIRD_PARTY' }] },
+      { prop: 'ownerCode', label: '货主编码', type: 'text', required: true },
+      { prop: 'ownerName', label: '货主名称', type: 'text', required: true },
+      { prop: 'ownerType', label: '货主类型', type: 'select', options: [{ label: '自营', value: 'SELF' }, { label: '第三方', value: 'THIRD_PARTY' }], required: true },
       { prop: 'contactName', label: '联系人', type: 'text' },
       { prop: 'contactPhone', label: '联系电话', type: 'text' },
       { prop: 'email', label: '邮箱', type: 'text' },
       { prop: 'address', label: '地址', type: 'textarea' },
-      { prop: 'status', label: '状态', type: 'select', options: statusOptions },
+      { prop: 'status', label: '状态', type: 'select', options: statusOptions, required: true },
       { prop: 'remark', label: '备注', type: 'textarea' }
     ],
     defaults: {
@@ -138,13 +138,13 @@ export default {
       { prop: 'status', label: '状态' }
     ],
     fields: [
-      { prop: 'supplierCode', label: '供应商编码', type: 'text' },
-      { prop: 'supplierName', label: '供应商名称', type: 'text' },
+      { prop: 'supplierCode', label: '供应商编码', type: 'text', required: true },
+      { prop: 'supplierName', label: '供应商名称', type: 'text', required: true },
       { prop: 'contactName', label: '联系人', type: 'text' },
       { prop: 'contactPhone', label: '联系电话', type: 'text' },
       { prop: 'email', label: '邮箱', type: 'text' },
       { prop: 'address', label: '地址', type: 'textarea' },
-      { prop: 'status', label: '状态', type: 'select', options: statusOptions },
+      { prop: 'status', label: '状态', type: 'select', options: statusOptions, required: true },
       { prop: 'remark', label: '备注', type: 'textarea' }
     ],
     defaults: {
@@ -163,14 +163,14 @@ export default {
       { prop: 'status', label: '状态' }
     ],
     fields: [
-      { prop: 'customerCode', label: '客户编码', type: 'text' },
-      { prop: 'customerName', label: '客户名称', type: 'text' },
-      { prop: 'customerType', label: '客户类型', type: 'select', options: [{ label: 'B2B', value: 'B2B' }, { label: 'B2C', value: 'B2C' }] },
+      { prop: 'customerCode', label: '客户编码', type: 'text', required: true },
+      { prop: 'customerName', label: '客户名称', type: 'text', required: true },
+      { prop: 'customerType', label: '客户类型', type: 'select', options: [{ label: 'B2B', value: 'B2B' }, { label: 'B2C', value: 'B2C' }], required: true },
       { prop: 'contactName', label: '联系人', type: 'text' },
       { prop: 'contactPhone', label: '联系电话', type: 'text' },
       { prop: 'email', label: '邮箱', type: 'text' },
       { prop: 'address', label: '地址', type: 'textarea' },
-      { prop: 'status', label: '状态', type: 'select', options: statusOptions },
+      { prop: 'status', label: '状态', type: 'select', options: statusOptions, required: true },
       { prop: 'remark', label: '备注', type: 'textarea' }
     ],
     defaults: {
@@ -191,12 +191,12 @@ export default {
       { prop: 'status', label: '状态' }
     ],
     fields: [
-      { prop: 'skuCode', label: 'SKU编码', type: 'text' },
-      { prop: 'productName', label: '商品名称', type: 'text' },
+      { prop: 'skuCode', label: 'SKU编码', type: 'text', required: true },
+      { prop: 'productName', label: '商品名称', type: 'text', required: true },
       { prop: 'productSpec', label: '规格', type: 'text' },
       { prop: 'categoryName', label: '分类', type: 'text' },
       { prop: 'brandName', label: '品牌', type: 'text' },
-      { prop: 'unitName', label: '单位', type: 'text' },
+      { prop: 'unitName', label: '单位', type: 'text', required: true },
       { prop: 'barcode', label: '条码', type: 'text' },
       { prop: 'safeStock', label: '安全库存', type: 'number' },
       { prop: 'maxStock', label: '最大库存', type: 'number' },
@@ -206,7 +206,7 @@ export default {
       { prop: 'weightKg', label: '重量(kg)', type: 'number' },
       { prop: 'volumeM3', label: '体积(m3)', type: 'number' },
       { prop: 'salePrice', label: '销售价', type: 'number' },
-      { prop: 'status', label: '状态', type: 'select', options: statusOptions },
+      { prop: 'status', label: '状态', type: 'select', options: statusOptions, required: true },
       { prop: 'remark', label: '备注', type: 'textarea' }
     ],
     defaults: {

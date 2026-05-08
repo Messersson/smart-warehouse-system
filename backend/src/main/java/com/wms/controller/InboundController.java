@@ -4,6 +4,7 @@ import com.wms.common.ApiResponse;
 import com.wms.dto.InboundOrderRequest;
 import com.wms.dto.InboundPickupActionRequest;
 import com.wms.service.InboundService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,7 +31,7 @@ public class InboundController {
     }
 
     @PostMapping
-    public ApiResponse<?> create(@RequestBody InboundOrderRequest request) {
+    public ApiResponse<?> create(@Valid @RequestBody InboundOrderRequest request) {
         return ApiResponse.ok(inboundService.create(request));
     }
 
@@ -45,7 +46,7 @@ public class InboundController {
     }
 
     @PostMapping("/{id}/pickup-action")
-    public ApiResponse<?> pickupAction(@PathVariable Long id, @RequestBody InboundPickupActionRequest request) {
+    public ApiResponse<?> pickupAction(@PathVariable Long id, @Valid @RequestBody InboundPickupActionRequest request) {
         return ApiResponse.ok(inboundService.handlePickupAction(id, request));
     }
 }

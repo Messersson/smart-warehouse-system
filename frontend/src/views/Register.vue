@@ -1,27 +1,27 @@
 <template>
   <div class="auth-shell">
-    <div class="auth-card">
+    <div class="auth-card register-card">
       <section class="auth-brand">
         <div class="brand-head">
           <div class="brand-mark">W</div>
           <div>
-            <div class="brand-title">仓储管理平台</div>
-            <div class="brand-subtitle">WMS Enterprise Console</div>
+            <div class="brand-title">企业账号申请</div>
+            <div class="brand-subtitle">Identity Provisioning</div>
           </div>
         </div>
 
         <div class="brand-metrics">
           <div class="metric-row">
-            <span>系统版本</span>
-            <strong>0.0.1</strong>
+            <span>默认角色</span>
+            <strong>OPERATOR</strong>
           </div>
           <div class="metric-row">
-            <span>认证方式</span>
-            <strong>Bearer Token</strong>
+            <span>账号状态</span>
+            <strong>待启用</strong>
           </div>
           <div class="metric-row">
-            <span>账号开通</span>
-            <strong>管理员启用</strong>
+            <span>启用位置</span>
+            <strong>权限管理</strong>
           </div>
         </div>
       </section>
@@ -29,37 +29,62 @@
       <section class="auth-form-panel">
         <div class="form-head">
           <div>
-            <h1>系统登录</h1>
-            <p>使用企业账号进入仓储运营工作台</p>
+            <h1>账号申请</h1>
+            <p>提交后由管理员审核并启用账号</p>
           </div>
-          <router-link class="switch-link" to="/register">账号申请</router-link>
+          <router-link class="switch-link" to="/login">返回登录</router-link>
         </div>
 
-        <el-form :model="form" label-position="top" class="auth-form" autocomplete="off">
-          <el-form-item label="用户名">
-            <el-input
-              v-model.trim="form.username"
-              autocomplete="off"
-              name="wms-login-username"
-              placeholder="请输入用户名"
-              prefix-icon="el-icon-user"
-              @keyup.enter.native="submit"
-            />
-          </el-form-item>
+        <el-form :model="form" label-position="top" class="auth-form">
+          <div class="form-grid">
+            <el-form-item label="用户名">
+              <el-input
+                v-model.trim="form.username"
+                autocomplete="username"
+                placeholder="3-32 位字母、数字或下划线"
+                prefix-icon="el-icon-user"
+              />
+            </el-form-item>
+            <el-form-item label="姓名">
+              <el-input
+                v-model.trim="form.displayName"
+                autocomplete="name"
+                placeholder="请输入真实姓名"
+                prefix-icon="el-icon-postcard"
+              />
+            </el-form-item>
+            <el-form-item label="联系电话">
+              <el-input
+                v-model.trim="form.phone"
+                autocomplete="tel"
+                placeholder="用于管理员核验"
+                prefix-icon="el-icon-phone"
+              />
+            </el-form-item>
+            <el-form-item label="邮箱">
+              <el-input
+                v-model.trim="form.email"
+                autocomplete="email"
+                placeholder="name@example.com"
+                prefix-icon="el-icon-message"
+              />
+            </el-form-item>
+          </div>
+
           <el-form-item label="密码">
             <el-input
               v-model="form.password"
               type="password"
               autocomplete="new-password"
-              name="wms-login-password"
-              placeholder="请输入密码"
+              placeholder="至少 6 位"
               prefix-icon="el-icon-lock"
               show-password
               @keyup.enter.native="submit"
             />
           </el-form-item>
+
           <el-button type="primary" :loading="loading" class="submit-btn" @click="submit">
-            登录
+            提交申请
           </el-button>
         </el-form>
       </section>
@@ -71,33 +96,35 @@
 import { post } from '../api'
 
 export default {
-  name: 'LoginPage',
+  name: 'RegisterPage',
   data() {
     return {
       loading: false,
       form: {
         username: '',
-        password: ''
+        password: '',
+        displayName: '',
+        phone: '',
+        email: ''
       }
     }
   },
-  created() {
-    localStorage.removeItem('wms-user')
-  },
   methods: {
     async submit() {
-      if (!this.form.username || !this.form.password) {
-        this.$message.warning('请输入用户名和密码')
+      if (!this.form.username || !this.form.password || !this.form.displayName) {
+        this.$message.warning('请填写用户名、姓名和密码')
         return
       }
       this.loading = true
       try {
-        const response = await post('/auth/login', this.form)
-        localStorage.setItem('wms-user', JSON.stringify(response.data))
-        this.$message.success('登录成功')
-        this.$router.push('/dashboard')
+        const response = await post('/auth/register', this.form)
+        this.$alert(response.data.message || '账号申请已提交，请等待管理员启用', '提交成功', {
+          type: 'success',
+          confirmButtonText: '返回登录',
+          callback: () => this.$router.push('/login')
+        })
       } catch (error) {
-        this.$message.error(error.message || '登录失败')
+        this.$message.error(error.message || '提交失败')
       } finally {
         this.loading = false
       }
@@ -134,7 +161,7 @@ export default {
 .auth-card {
   position: relative;
   z-index: 1;
-  width: min(900px, calc(100vw - 48px));
+  width: min(940px, calc(100vw - 48px));
   max-width: 100%;
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -240,7 +267,7 @@ export default {
 .auth-form-panel {
   position: relative;
   min-width: 0;
-  padding: 40px;
+  padding: 36px 40px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -252,7 +279,7 @@ export default {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .form-head h1 {
@@ -285,6 +312,12 @@ export default {
 
 .auth-form {
   width: 100%;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
 }
 
 .submit-btn {
@@ -391,6 +424,10 @@ export default {
 
   .auth-form-panel {
     padding: 28px 24px 32px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

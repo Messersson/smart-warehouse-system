@@ -1,5 +1,6 @@
 param(
     [switch]$Build,
+    [switch]$SkipBuild,
     [switch]$FollowLogs,
     [int]$TimeoutSeconds = 180
 )
@@ -8,7 +9,12 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+$buildStateFile = Join-Path $projectRoot '.start-project-state.json'
 Set-Location $projectRoot
+
+if ($Build -and $SkipBuild) {
+    throw "Parameters -Build and -SkipBuild cannot be used together."
+}
 
 function Write-Section {
     param([string]$Message)
@@ -69,6 +75,131 @@ function Invoke-ProcessCommand {
     } finally {
         Remove-Item $stdoutFile -ErrorAction SilentlyContinue
         Remove-Item $stderrFile -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-RelativePath {
+    param([string]$Path)
+
+    $uri = [System.Uri]((Resolve-Path $projectRoot).Path.TrimEnd('\') + '\')
+    $targetUri = [System.Uri](Resolve-Path $Path).Path
+    return [System.Uri]::UnescapeDataString($uri.MakeRelativeUri($targetUri).ToString()).Replace('/', '\')
+}
+
+function Get-BuildTrackedFiles {
+    $tracked = New-Object System.Collections.Generic.List[string]
+
+    $rootFiles = @(
+        (Join-Path $projectRoot 'docker-compose.yml')
+    )
+    foreach ($file in $rootFiles) {
+        if (Test-Path $file) {
+            $tracked.Add((Resolve-Path $file).Path)
+        }
+    }
+
+    $sourceRoots = @(
+        (Join-Path $projectRoot 'backend'),
+        (Join-Path $projectRoot 'frontend')
+    )
+    $excludedDirectories = @('target', 'node_modules', 'dist')
+
+    foreach ($root in $sourceRoots) {
+        if (-not (Test-Path $root)) {
+            continue
+        }
+
+        Get-ChildItem -Path $root -Recurse -File | Where-Object {
+            $relativePath = Get-RelativePath -Path $_.FullName
+            -not ($excludedDirectories | Where-Object { $relativePath -match "(^|\\)$_(\\|$)" })
+        } | ForEach-Object {
+            $tracked.Add($_.FullName)
+        }
+    }
+
+    return $tracked | Sort-Object -Unique
+}
+
+function Get-BuildFingerprint {
+    $builder = New-Object System.Text.StringBuilder
+
+    foreach ($path in Get-BuildTrackedFiles) {
+        $item = Get-Item $path
+        $relativePath = Get-RelativePath -Path $item.FullName
+        [void]$builder.AppendLine("$relativePath|$($item.Length)|$($item.LastWriteTimeUtc.Ticks)")
+    }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($builder.ToString())
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($sha256.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
+function Read-BuildState {
+    if (-not (Test-Path $buildStateFile)) {
+        return $null
+    }
+
+    try {
+        return Get-Content $buildStateFile -Raw | ConvertFrom-Json
+    } catch {
+        Write-Warn "Build state file is unreadable. The launcher will rebuild images."
+        return $null
+    }
+}
+
+function Write-BuildState {
+    param([string]$Fingerprint)
+
+    $state = [pscustomobject]@{
+        fingerprint = $Fingerprint
+        updatedAt   = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    $state | ConvertTo-Json | Set-Content -Path $buildStateFile
+}
+
+function Get-BuildDecision {
+    if ($Build) {
+        return [pscustomobject]@{
+            ShouldBuild = $true
+            Fingerprint = Get-BuildFingerprint
+            Reason      = 'Forced by -Build.'
+        }
+    }
+
+    if ($SkipBuild) {
+        return [pscustomobject]@{
+            ShouldBuild = $false
+            Fingerprint = $null
+            Reason      = 'Skipped by -SkipBuild.'
+        }
+    }
+
+    $fingerprint = Get-BuildFingerprint
+    $state = Read-BuildState
+    if ($null -eq $state -or [string]::IsNullOrWhiteSpace($state.fingerprint)) {
+        return [pscustomobject]@{
+            ShouldBuild = $true
+            Fingerprint = $fingerprint
+            Reason      = 'No previous build state was found.'
+        }
+    }
+
+    if ($state.fingerprint -ne $fingerprint) {
+        return [pscustomobject]@{
+            ShouldBuild = $true
+            Fingerprint = $fingerprint
+            Reason      = 'Source files changed since the last successful launcher build.'
+        }
+    }
+
+    return [pscustomobject]@{
+        ShouldBuild = $false
+        Fingerprint = $fingerprint
+        Reason      = 'No tracked source changes were detected.'
     }
 }
 
@@ -292,13 +423,28 @@ Write-Ok "Docker daemon is available"
 
 Write-Section "Starting Services"
 $upArguments = @('up', '-d')
-if ($Build) {
+$buildDecision = Get-BuildDecision
+$buildFallbackUsed = $false
+if ($buildDecision.ShouldBuild) {
     $upArguments += '--build'
     Write-Info "Using docker compose up -d --build"
+    Write-Info "Build reason: $($buildDecision.Reason)"
 } else {
     Write-Info "Using docker compose up -d"
+    Write-Info "Build reason: $($buildDecision.Reason)"
 }
-Invoke-Compose -Arguments $upArguments
+try {
+    Invoke-Compose -Arguments $upArguments
+} catch {
+    if ($buildDecision.ShouldBuild -and -not $Build) {
+        Write-Warn "Image rebuild failed. The launcher will try existing images once before stopping."
+        Write-Warn $_.Exception.Message.Split([Environment]::NewLine)[0]
+        $buildFallbackUsed = $true
+        Invoke-Compose -Arguments @('up', '-d')
+    } else {
+        throw
+    }
+}
 
 $definitions = @(
     [pscustomobject]@{ Name = 'MySQL'; Service = 'mysql'; Url = '' },
@@ -325,6 +471,11 @@ if (@($statuses | Where-Object { -not $_.Ready }).Count -gt 0) {
     Write-Fail "One or more services did not become ready within $TimeoutSeconds seconds."
     Show-FailureLogs -Statuses $statuses
     exit 1
+}
+
+if ($buildDecision.ShouldBuild -and -not $buildFallbackUsed -and $null -ne $buildDecision.Fingerprint) {
+    Write-BuildState -Fingerprint $buildDecision.Fingerprint
+    Write-Info "Updated build state: $buildStateFile"
 }
 
 Write-Section "Access Information"

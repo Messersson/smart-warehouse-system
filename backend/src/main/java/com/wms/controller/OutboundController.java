@@ -3,6 +3,7 @@ package com.wms.controller;
 import com.wms.common.ApiResponse;
 import com.wms.dto.OutboundOrderRequest;
 import com.wms.service.OutboundService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,7 +30,7 @@ public class OutboundController {
     }
 
     @PostMapping
-    public ApiResponse<?> create(@RequestBody OutboundOrderRequest request) {
+    public ApiResponse<?> create(@Valid @RequestBody OutboundOrderRequest request) {
         return ApiResponse.ok(outboundService.create(request));
     }
 
