@@ -1,18 +1,26 @@
 package com.wms.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wms.common.BusinessException;
+import com.wms.common.BusinessCodeGenerator;
 import com.wms.dto.InboundOrderItemRequest;
 import com.wms.dto.InboundOrderRequest;
 import com.wms.dto.InboundPickupActionRequest;
+import com.wms.dto.InboundPutawayScanRequest;
+import com.wms.dto.CodeRenderRequest;
+import com.wms.entity.CargoCodeRecord;
 import com.wms.entity.Customer;
 import com.wms.entity.InboundOrder;
 import com.wms.entity.InboundOrderItem;
+import com.wms.entity.Location;
 import com.wms.entity.Product;
 import com.wms.entity.Supplier;
 import com.wms.entity.Warehouse;
+import com.wms.repository.CargoCodeRecordRepository;
 import com.wms.repository.CustomerRepository;
 import com.wms.repository.InboundOrderItemRepository;
 import com.wms.repository.InboundOrderRepository;
+import com.wms.repository.LocationRepository;
 import com.wms.repository.ProductRepository;
 import com.wms.repository.SupplierRepository;
 import com.wms.repository.WarehouseRepository;
@@ -22,8 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,8 +49,14 @@ public class InboundService {
     private final WarehouseRepository warehouseRepository;
     private final SupplierRepository supplierRepository;
     private final CustomerRepository customerRepository;
+    private final LocationRepository locationRepository;
+    private final ScanService scanService;
     private final StockService stockService;
     private final ExceptionService exceptionService;
+    private final CodeRenderService codeRenderService;
+    private final CargoCodeRecordRepository cargoCodeRecordRepository;
+    private final CargoCodeRecordService cargoCodeRecordService;
+    private final ObjectMapper objectMapper;
 
     public List<Map<String, Object>> list() {
         Map<Long, Warehouse> warehouseMap = warehouseRepository.findAll().stream()
@@ -63,14 +77,18 @@ public class InboundService {
             throw new BusinessException("Inbound order requires at least one item");
         }
 
-        Warehouse warehouse = warehouseRepository.findById(request.getWarehouseId())
+        Supplier supplier = request.getSupplierId() == null ? null : supplierRepository.findById(request.getSupplierId())
+                .orElseThrow(() -> new BusinessException("Supplier not found"));
+        Long warehouseId = resolveWarehouseId(request.getWarehouseId(), supplier);
+        Warehouse warehouse = warehouseRepository.findById(warehouseId)
                 .orElseThrow(() -> new BusinessException("Warehouse not found"));
         Customer customer = request.getCustomerId() == null ? null : customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new BusinessException("Customer not found"));
 
+        String unifiedCode = BusinessCodeGenerator.unifiedOrderCode(request.getOrderNo());
         InboundOrder order = new InboundOrder();
-        order.setOrderNo(optionalCode(request.getOrderNo(), "IN"));
-        order.setWarehouseId(request.getWarehouseId());
+        order.setOrderNo(unifiedCode);
+        order.setWarehouseId(warehouseId);
         order.setSupplierId(request.getSupplierId());
         order.setOwnerId(request.getOwnerId());
         order.setCustomerId(request.getCustomerId());
@@ -81,12 +99,12 @@ public class InboundService {
         order.setOperatorName(defaultText(request.getOperatorName(), "System Admin"));
         order.setReceiverName(defaultText(request.getReceiverName(), customer == null ? null : customer.getCustomerName()));
         order.setReceiverPhone(defaultText(request.getReceiverPhone(), customer == null ? null : customer.getContactPhone()));
-        order.setScanCode(optionalCode(request.getScanCode(), "SCAN"));
+        order.setScanCode(unifiedCode);
         order.setRemark(request.getRemark());
 
         boolean pickupRequired = requiresCustomerPickup(warehouse, order);
         order.setPickupStatus(pickupRequired ? "WAITING_PUTAWAY" : "NOT_REQUIRED");
-        order.setPickupCode(pickupRequired ? optionalCode(request.getPickupCode(), "PICK") : null);
+        order.setPickupCode(pickupRequired ? unifiedCode : null);
 
         BigDecimal totalExpected = request.getItems().stream()
                 .map(InboundOrderItemRequest::getExpectedQty)
@@ -100,7 +118,7 @@ public class InboundService {
         order.setTotalActualQty(totalActual);
 
         InboundOrder savedOrder = inboundOrderRepository.save(order);
-        saveItems(savedOrder, request.getItems(), warehouse);
+        saveItems(savedOrder, request.getItems(), warehouse, supplier);
         return detail(savedOrder.getId());
     }
 
@@ -147,6 +165,17 @@ public class InboundService {
         }
 
         List<InboundOrderItem> items = inboundOrderItemRepository.findByOrderIdOrderByIdAsc(id);
+        List<InboundOrderItem> unconfirmedItems = items.stream()
+                .filter(item -> !Boolean.TRUE.equals(item.getPutawayScanConfirmed()))
+                .toList();
+        if (!unconfirmedItems.isEmpty()) {
+            String codes = unconfirmedItems.stream()
+                    .map(InboundOrderItem::getCargoCode)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining(", "));
+            throw new BusinessException("请先打印并扫描货物标签确认入库后再上架" + (codes.isBlank() ? "" : ": " + codes));
+        }
+
         items.forEach(item -> {
             if (item.getLocationId() == null && Boolean.TRUE.equals(warehouse.getAutoAssignLocation())) {
                 item.setLocationId(stockService.resolveInboundLocation(order.getWarehouseId(), defaultQty(item.getQualifiedQty())));
@@ -165,6 +194,54 @@ public class InboundService {
         }
         inboundOrderRepository.save(order);
         return detail(id);
+    }
+
+    @Transactional
+    public Map<String, Object> scanPutaway(InboundPutawayScanRequest request) {
+        if (request == null || request.getRawContent() == null || request.getRawContent().isBlank()) {
+            throw new BusinessException("请先扫描货物标签");
+        }
+
+        com.wms.dto.ScanRecordRequest scanRecordRequest = new com.wms.dto.ScanRecordRequest();
+        scanRecordRequest.setRawContent(request.getRawContent());
+        scanRecordRequest.setScanFormat(request.getScanFormat());
+        scanRecordRequest.setSourceDevice(defaultText(request.getSourceDevice(), "WEB_PDA"));
+        scanRecordRequest.setScannerInterface(defaultText(request.getScannerInterface(), "WEB_MANUAL"));
+        scanRecordRequest.setScannerDeviceId(request.getScannerDeviceId());
+        scanRecordRequest.setOperatorName(defaultText(request.getOperatorName(), "系统管理员"));
+        scanRecordRequest.setRemark(defaultText(request.getRemark(), "入库贴码扫码确认"));
+
+        Map<String, Object> scanResult = scanService.saveRecord(scanRecordRequest);
+        Map<String, Object> lookupData = castMap(scanResult.get("lookupData"));
+        if (lookupData == null || !"INBOUND_ORDER_ITEM".equals(lookupData.get("entityType"))) {
+            throw new BusinessException("请扫描货物标签上的二维码或条形码，当前扫码对象不是入库货物");
+        }
+
+        Long itemId = valueAsLong(lookupData.get("id"));
+        InboundOrderItem item = inboundOrderItemRepository.findById(itemId)
+                .orElseThrow(() -> new BusinessException("入库货物明细不存在"));
+        InboundOrder order = inboundOrderRepository.findById(item.getOrderId())
+                .orElseThrow(() -> new BusinessException("入库单不存在"));
+        if ("PUTAWAY_COMPLETED".equals(order.getStatus())) {
+            throw new BusinessException("该货物所属入库单已完成上架，不能重复确认");
+        }
+        if (item.getLocationId() == null) {
+            throw new BusinessException("该货物尚未分配库位，请先分配库位后再打印并扫码确认");
+        }
+
+        Map<String, Object> recordData = castMap(scanResult.get("record"));
+        item.setPutawayScanConfirmed(true);
+        item.setPutawayScanConfirmedAt(LocalDateTime.now());
+        item.setPutawayScanOperator(defaultText(request.getOperatorName(), "系统管理员"));
+        item.setPutawayScanRecordId(recordData == null ? null : valueAsLong(recordData.get("id")));
+        inboundOrderItemRepository.save(item);
+
+        Map<String, Object> data = detail(order.getId());
+        data.put("confirmedItemId", item.getId());
+        data.put("confirmedCargoCode", item.getCargoCode());
+        data.put("scanRecord", recordData);
+        data.put("message", "货物标签扫码确认成功，确认后可正式上架入库");
+        return data;
     }
 
     @Transactional
@@ -233,7 +310,7 @@ public class InboundService {
         );
     }
 
-    private void saveItems(InboundOrder order, List<InboundOrderItemRequest> items, Warehouse warehouse) {
+    private void saveItems(InboundOrder order, List<InboundOrderItemRequest> items, Warehouse warehouse, Supplier supplier) {
         items.forEach(itemRequest -> {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new BusinessException("Product not found, productId=" + itemRequest.getProductId()));
@@ -244,6 +321,10 @@ public class InboundService {
             item.setSkuCode(product.getSkuCode());
             item.setProductName(product.getProductName());
             item.setBatchNo(itemRequest.getBatchNo());
+            item.setCargoCode(defaultText(itemRequest.getCargoCode(), BusinessCodeGenerator.cargoCode()));
+            item.setCargoCodeType(resolveCargoCodeType(itemRequest.getCargoCodeType(), warehouse));
+            item.setExternalPlatform(defaultText(itemRequest.getExternalPlatform(), supplier == null ? null : supplier.getPlatformType()));
+            item.setExternalCode(itemRequest.getExternalCode());
             item.setProductionDate(itemRequest.getProductionDate());
             item.setExpiryDate(itemRequest.getExpiryDate());
             item.setExpectedQty(defaultQty(itemRequest.getExpectedQty()));
@@ -257,8 +338,11 @@ public class InboundService {
                 locationId = stockService.resolveInboundLocation(order.getWarehouseId(), defaultQty(item.getQualifiedQty()));
             }
             item.setLocationId(locationId);
+            Location location = resolveLocationForLabel(locationId, order.getWarehouseId());
             item.setRemark(itemRequest.getRemark());
-            inboundOrderItemRepository.save(item);
+            item.setCargoCodeContent(buildCargoCodeContent(order, item, product, warehouse, supplier, location));
+            InboundOrderItem savedItem = inboundOrderItemRepository.save(item);
+            saveCargoCodeRecord(order, savedItem, warehouse, location);
         });
     }
 
@@ -270,6 +354,7 @@ public class InboundService {
     ) {
         Map<String, Object> item = new HashMap<>();
         item.put("id", order.getId());
+        item.put("code", order.getOrderNo());
         item.put("orderNo", order.getOrderNo());
         item.put("warehouseId", order.getWarehouseId());
         item.put("warehouseName", Optional.ofNullable(warehouseMap.get(order.getWarehouseId())).map(Warehouse::getWarehouseName).orElse(null));
@@ -295,21 +380,229 @@ public class InboundService {
         item.put("totalActualQty", order.getTotalActualQty());
         item.put("operatorName", order.getOperatorName());
         item.put("remark", order.getRemark());
-        item.put("items", inboundOrderItemRepository.findByOrderIdOrderByIdAsc(order.getId()));
+        item.put("items", inboundOrderItemRepository.findByOrderIdOrderByIdAsc(order.getId()).stream()
+                .map(this::toItemView)
+                .toList());
         return item;
+    }
+
+    private Map<String, Object> toItemView(InboundOrderItem item) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", item.getId());
+        data.put("orderId", item.getOrderId());
+        data.put("productId", item.getProductId());
+        data.put("skuCode", item.getSkuCode());
+        data.put("productName", item.getProductName());
+        data.put("batchNo", item.getBatchNo());
+        data.put("cargoCode", item.getCargoCode());
+        data.put("cargoCodeType", item.getCargoCodeType());
+        data.put("cargoCodeContent", item.getCargoCodeContent());
+        data.put("externalPlatform", item.getExternalPlatform());
+        data.put("externalCode", item.getExternalCode());
+        data.put("productionDate", item.getProductionDate());
+        data.put("expiryDate", item.getExpiryDate());
+        data.put("expectedQty", item.getExpectedQty());
+        data.put("actualQty", item.getActualQty());
+        data.put("qualifiedQty", item.getQualifiedQty());
+        data.put("locationId", item.getLocationId());
+        locationRepository.findById(Optional.ofNullable(item.getLocationId()).orElse(-1L)).ifPresent(location -> {
+            data.put("locationCode", location.getLocationCode());
+            data.put("locationName", location.getLocationName());
+            data.put("zoneName", location.getZoneName());
+            data.put("aisleNo", location.getAisleNo());
+            data.put("shelfNo", location.getShelfNo());
+            data.put("layerNo", location.getLayerNo());
+            data.put("binNo", location.getBinNo());
+            data.put("locationFullName", locationFullName(location));
+        });
+        data.put("putawayScanConfirmed", Boolean.TRUE.equals(item.getPutawayScanConfirmed()));
+        data.put("putawayScanConfirmedAt", item.getPutawayScanConfirmedAt());
+        data.put("putawayScanOperator", item.getPutawayScanOperator());
+        data.put("putawayScanRecordId", item.getPutawayScanRecordId());
+        data.put("remark", item.getRemark());
+        List<Map<String, Object>> codeRecords = cargoCodeRecordRepository.findByInboundOrderItemIdOrderByIdAsc(item.getId()).stream()
+                .map(cargoCodeRecordService::toView)
+                .toList();
+        data.put("cargoCodeRecords", codeRecords);
+        data.put("cargoCodeSvg", codeRecords.isEmpty() ? null : codeRecords.get(codeRecords.size() - 1).get("svgContent"));
+        return data;
+    }
+
+    private void saveCargoCodeRecord(InboundOrder order, InboundOrderItem item, Warehouse warehouse, Location location) {
+        String rawContent = codeRawContent(item);
+        CodeRenderRequest renderRequest = new CodeRenderRequest();
+        renderRequest.setRawContent(rawContent);
+        renderRequest.setScanFormat(item.getCargoCodeType());
+        renderRequest.setWidth("BAR_CODE".equals(item.getCargoCodeType()) ? 520 : 240);
+        renderRequest.setHeight("BAR_CODE".equals(item.getCargoCodeType()) ? 140 : 240);
+        Map<String, Object> rendered = codeRenderService.render(renderRequest);
+
+        CargoCodeRecord record = new CargoCodeRecord();
+        record.setInboundOrderId(order.getId());
+        record.setInboundOrderItemId(item.getId());
+        record.setWarehouseId(order.getWarehouseId());
+        record.setProductId(item.getProductId());
+        record.setOperationType("INBOUND_PUTAWAY");
+        record.setOperationCode(order.getOrderNo());
+        record.setLocationId(item.getLocationId());
+        record.setLocationCode(location == null ? null : location.getLocationCode());
+        record.setLocationName(location == null ? null : location.getLocationName());
+        record.setZoneName(location == null ? null : location.getZoneName());
+        record.setCargoCode(item.getCargoCode());
+        record.setCargoCodeType(item.getCargoCodeType());
+        record.setRawContent(rawContent);
+        record.setSvgContent((String) rendered.get("svg"));
+        record.setRenderFormat((String) rendered.get("scanFormat"));
+        record.setRenderWidth(renderRequest.getWidth());
+        record.setRenderHeight(renderRequest.getHeight());
+        record.setExternalPlatform(item.getExternalPlatform());
+        record.setExternalCode(item.getExternalCode());
+        record.setStatus("ACTIVE");
+        record.setRemark("自动生成入库货物码");
+        cargoCodeRecordRepository.save(record);
+    }
+
+    private String codeRawContent(InboundOrderItem item) {
+        return "BAR_CODE".equals(item.getCargoCodeType())
+                ? item.getCargoCode()
+                : defaultText(item.getCargoCodeContent(), item.getCargoCode());
+    }
+
+    private String resolveCargoCodeType(String requestedType, Warehouse warehouse) {
+        String type = requestedType == null || requestedType.isBlank()
+                ? warehouse.getScanMode()
+                : requestedType;
+        if ("HYBRID".equalsIgnoreCase(type)) {
+            return "QR_CODE";
+        }
+        if ("BAR_CODE".equalsIgnoreCase(type) || "BARCODE".equalsIgnoreCase(type)) {
+            return "BAR_CODE";
+        }
+        return "QR_CODE";
+    }
+
+    private String buildCargoCodeContent(
+            InboundOrder order,
+            InboundOrderItem item,
+            Product product,
+            Warehouse warehouse,
+            Supplier supplier,
+            Location location
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("code", item.getCargoCode());
+        payload.put("cargoCode", item.getCargoCode());
+        payload.put("orderNo", order.getOrderNo());
+        payload.put("workCode", order.getOrderNo());
+        payload.put("operationType", "INBOUND_PUTAWAY");
+        payload.put("operationName", "入库上架");
+        payload.put("warehouseId", order.getWarehouseId());
+        payload.put("warehouseCode", warehouse.getWarehouseCode());
+        payload.put("warehouseName", warehouse.getWarehouseName());
+        payload.put("supplierId", order.getSupplierId());
+        payload.put("supplierCode", supplier == null ? null : supplier.getSupplierCode());
+        payload.put("supplierName", supplier == null ? null : supplier.getSupplierName());
+        payload.put("platform", item.getExternalPlatform());
+        payload.put("externalCode", item.getExternalCode());
+        payload.put("productId", item.getProductId());
+        payload.put("skuCode", item.getSkuCode());
+        payload.put("productName", item.getProductName());
+        payload.put("productBarcode", product.getBarcode());
+        payload.put("batchNo", item.getBatchNo());
+        payload.put("expectedQty", item.getExpectedQty());
+        payload.put("actualQty", item.getActualQty());
+        payload.put("qualifiedQty", item.getQualifiedQty());
+        payload.put("locationId", item.getLocationId());
+        payload.put("locationCode", location == null ? null : location.getLocationCode());
+        payload.put("locationName", location == null ? null : location.getLocationName());
+        payload.put("zoneName", location == null ? null : location.getZoneName());
+        payload.put("aisleNo", location == null ? null : location.getAisleNo());
+        payload.put("shelfNo", location == null ? null : location.getShelfNo());
+        payload.put("layerNo", location == null ? null : location.getLayerNo());
+        payload.put("binNo", location == null ? null : location.getBinNo());
+        payload.put("locationFullName", locationFullName(location));
+        payload.put("productionDate", item.getProductionDate());
+        payload.put("expiryDate", item.getExpiryDate());
+        payload.put("source", "WMS_INBOUND");
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception exception) {
+            throw new BusinessException("货物码内容生成失败: " + exception.getMessage());
+        }
+    }
+
+    private Location resolveLocationForLabel(Long locationId, Long warehouseId) {
+        if (locationId == null) {
+            throw new BusinessException("入库货物必须先分配库位，才能生成可打印的二维码/条形码标签");
+        }
+        Location location = locationRepository.findById(locationId)
+                .orElseThrow(() -> new BusinessException("库位不存在，无法生成货物标签"));
+        if (!Objects.equals(location.getWarehouseId(), warehouseId)) {
+            throw new BusinessException("货物库位不属于当前仓库，无法生成货物标签");
+        }
+        return location;
+    }
+
+    private String locationFullName(Location location) {
+        if (location == null) {
+            return null;
+        }
+        return List.of(
+                        location.getZoneName(),
+                        location.getAisleNo(),
+                        location.getShelfNo(),
+                        location.getLayerNo(),
+                        location.getBinNo(),
+                        location.getLocationCode(),
+                        location.getLocationName()
+                ).stream()
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .collect(Collectors.joining(" / "));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new HashMap<>();
+            map.forEach((key, item) -> {
+                if (key != null) {
+                    result.put(key.toString(), item);
+                }
+            });
+            return result;
+        }
+        return null;
+    }
+
+    private Long valueAsLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Long resolveWarehouseId(Long requestWarehouseId, Supplier supplier) {
+        if (supplier != null && supplier.getWarehouseId() != null) {
+            return supplier.getWarehouseId();
+        }
+        if (requestWarehouseId == null) {
+            throw new BusinessException("Warehouse not found");
+        }
+        return requestWarehouseId;
     }
 
     private boolean requiresCustomerPickup(Warehouse warehouse, InboundOrder order) {
         return order.getCustomerId() != null
                 || (order.getReceiverPhone() != null && !order.getReceiverPhone().isBlank())
                 || List.of("PARCEL_STATION", "TAKEOUT_LOCKER", "CAMPUS_PICKUP").contains(warehouse.getSceneType());
-    }
-
-    private String optionalCode(String value, String prefix) {
-        if (value != null && !value.isBlank()) {
-            return value;
-        }
-        return prefix + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now());
     }
 
     private String defaultText(String value, String defaultValue) {

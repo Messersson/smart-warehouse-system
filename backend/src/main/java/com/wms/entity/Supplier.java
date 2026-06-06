@@ -24,6 +24,12 @@ public class Supplier extends BaseEntity {
     @Column(name = "contact_phone")
     private String contactPhone;
 
+    @Column(name = "warehouse_id")
+    private Long warehouseId;
+
+    @Column(name = "platform_type")
+    private String platformType;
+
     private String email;
 
     private String address;

@@ -1,6 +1,8 @@
 package com.wms.controller;
 
 import com.wms.common.ApiResponse;
+import com.wms.common.BusinessCodeGenerator;
+import com.wms.common.BusinessException;
 import com.wms.entity.BaseEntity;
 import com.wms.entity.Customer;
 import com.wms.entity.Location;
@@ -209,36 +211,7 @@ public class MasterDataController {
 
     @PostMapping("/products")
     public ApiResponse<?> createProduct(@RequestBody Product product) {
-        if (product.getUnitName() == null) {
-            product.setUnitName("件");
-        }
-        if (product.getSafeStock() == null) {
-            product.setSafeStock(BigDecimal.ZERO);
-        }
-        if (product.getMaxStock() == null) {
-            product.setMaxStock(BigDecimal.ZERO);
-        }
-        if (product.getShelfLifeDays() == null) {
-            product.setShelfLifeDays(0);
-        }
-        if (product.getEnableBatch() == null) {
-            product.setEnableBatch(Boolean.TRUE);
-        }
-        if (product.getEnableSerial() == null) {
-            product.setEnableSerial(Boolean.FALSE);
-        }
-        if (product.getWeightKg() == null) {
-            product.setWeightKg(BigDecimal.ZERO);
-        }
-        if (product.getVolumeM3() == null) {
-            product.setVolumeM3(BigDecimal.ZERO);
-        }
-        if (product.getSalePrice() == null) {
-            product.setSalePrice(BigDecimal.ZERO);
-        }
-        if (product.getStatus() == null) {
-            product.setStatus("ACTIVE");
-        }
+        applyProductDefaults(product, null);
         return ApiResponse.ok(productRepository.save(product));
     }
 
@@ -247,6 +220,7 @@ public class MasterDataController {
         Product existing = productRepository.findById(id).orElseThrow();
         product.setId(id);
         preserveAuditFields(product, existing);
+        applyProductDefaults(product, existing);
         return ApiResponse.ok(productRepository.save(product));
     }
 
@@ -281,6 +255,69 @@ public class MasterDataController {
         if (warehouse.getScanMode() == null) {
             warehouse.setScanMode(existing == null ? "QR_CODE" : existing.getScanMode());
         }
+    }
+
+    private void applyProductDefaults(Product product, Product existing) {
+        if (product.getUnitName() == null) {
+            product.setUnitName(existing == null ? "件" : existing.getUnitName());
+        }
+        if (product.getSafeStock() == null) {
+            product.setSafeStock(existing == null ? BigDecimal.ZERO : existing.getSafeStock());
+        }
+        if (product.getMaxStock() == null) {
+            product.setMaxStock(existing == null ? BigDecimal.ZERO : existing.getMaxStock());
+        }
+        if (product.getShelfLifeDays() == null) {
+            product.setShelfLifeDays(existing == null ? 0 : existing.getShelfLifeDays());
+        }
+        if (product.getEnableBatch() == null) {
+            product.setEnableBatch(existing == null ? Boolean.TRUE : existing.getEnableBatch());
+        }
+        if (product.getEnableSerial() == null) {
+            product.setEnableSerial(existing == null ? Boolean.FALSE : existing.getEnableSerial());
+        }
+        if (product.getWeightKg() == null) {
+            product.setWeightKg(existing == null ? BigDecimal.ZERO : existing.getWeightKg());
+        }
+        if (product.getVolumeM3() == null) {
+            product.setVolumeM3(existing == null ? BigDecimal.ZERO : existing.getVolumeM3());
+        }
+        if (product.getSalePrice() == null) {
+            product.setSalePrice(existing == null ? BigDecimal.ZERO : existing.getSalePrice());
+        }
+        if (product.getStatus() == null) {
+            product.setStatus(existing == null ? "ACTIVE" : existing.getStatus());
+        }
+        product.setBarcode(resolveProductBarcode(product, existing));
+    }
+
+    private String resolveProductBarcode(Product product, Product existing) {
+        String barcode = product.getBarcode();
+        if (barcode == null || barcode.isBlank()) {
+            barcode = existing != null && existing.getBarcode() != null && !existing.getBarcode().isBlank()
+                    ? existing.getBarcode()
+                    : generateUniqueProductBarcode();
+        } else {
+            barcode = barcode.trim();
+        }
+
+        String resolvedBarcode = barcode;
+        productRepository.findFirstByBarcodeOrderByIdAsc(resolvedBarcode)
+                .filter(matched -> product.getId() == null || !product.getId().equals(matched.getId()))
+                .ifPresent(matched -> {
+                    throw new BusinessException("条码已存在: " + resolvedBarcode);
+                });
+        return resolvedBarcode;
+    }
+
+    private String generateUniqueProductBarcode() {
+        for (int i = 0; i < 20; i++) {
+            String barcode = BusinessCodeGenerator.productBarcode();
+            if (productRepository.findFirstByBarcodeOrderByIdAsc(barcode).isEmpty()) {
+                return barcode;
+            }
+        }
+        throw new BusinessException("自动生成商品条码失败，请重试");
     }
 
     private void preserveAuditFields(BaseEntity target, BaseEntity existing) {

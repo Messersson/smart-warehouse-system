@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS inventory_movement;
 DROP TABLE IF EXISTS inventory_stock;
 DROP TABLE IF EXISTS outbound_order_item;
 DROP TABLE IF EXISTS outbound_order;
+DROP TABLE IF EXISTS cargo_code_record;
 DROP TABLE IF EXISTS inbound_order_item;
 DROP TABLE IF EXISTS inbound_order;
 DROP TABLE IF EXISTS base_product;
@@ -187,6 +188,8 @@ CREATE TABLE base_supplier (
   supplier_name VARCHAR(128) NOT NULL,
   contact_name VARCHAR(64) DEFAULT NULL,
   contact_phone VARCHAR(32) DEFAULT NULL,
+  warehouse_id BIGINT DEFAULT NULL,
+  platform_type VARCHAR(64) DEFAULT NULL,
   email VARCHAR(128) DEFAULT NULL,
   address VARCHAR(255) DEFAULT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
@@ -294,16 +297,61 @@ CREATE TABLE inbound_order_item (
   sku_code VARCHAR(64) NOT NULL,
   product_name VARCHAR(128) NOT NULL,
   batch_no VARCHAR(64) DEFAULT NULL,
+  cargo_code VARCHAR(128) DEFAULT NULL,
+  cargo_code_type VARCHAR(32) NOT NULL DEFAULT 'QR_CODE',
+  cargo_code_content VARCHAR(2048) DEFAULT NULL,
+  external_platform VARCHAR(64) DEFAULT NULL,
+  external_code VARCHAR(255) DEFAULT NULL,
   production_date DATE DEFAULT NULL,
   expiry_date DATE DEFAULT NULL,
   expected_qty DECIMAL(18,2) NOT NULL DEFAULT 0,
   actual_qty DECIMAL(18,2) NOT NULL DEFAULT 0,
   qualified_qty DECIMAL(18,2) NOT NULL DEFAULT 0,
   location_id BIGINT DEFAULT NULL,
+  putaway_scan_confirmed TINYINT(1) NOT NULL DEFAULT 0,
+  putaway_scan_confirmed_at DATETIME DEFAULT NULL,
+  putaway_scan_operator VARCHAR(128) DEFAULT NULL,
+  putaway_scan_record_id BIGINT DEFAULT NULL,
   remark VARCHAR(255) DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  KEY idx_inbound_item_order (order_id)
+  KEY idx_inbound_item_order (order_id),
+  KEY idx_inbound_item_cargo_code (cargo_code),
+  KEY idx_inbound_item_external_code (external_code),
+  KEY idx_inbound_item_cargo_content (cargo_code_content(255)),
+  KEY idx_inbound_item_putaway_scan (putaway_scan_confirmed)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE cargo_code_record (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  inbound_order_id BIGINT NOT NULL,
+  inbound_order_item_id BIGINT NOT NULL,
+  warehouse_id BIGINT DEFAULT NULL,
+  product_id BIGINT DEFAULT NULL,
+  operation_type VARCHAR(64) DEFAULT NULL,
+  operation_code VARCHAR(64) DEFAULT NULL,
+  location_id BIGINT DEFAULT NULL,
+  location_code VARCHAR(128) DEFAULT NULL,
+  location_name VARCHAR(128) DEFAULT NULL,
+  zone_name VARCHAR(128) DEFAULT NULL,
+  cargo_code VARCHAR(128) NOT NULL,
+  cargo_code_type VARCHAR(32) NOT NULL,
+  raw_content TEXT NOT NULL,
+  svg_content MEDIUMTEXT DEFAULT NULL,
+  render_format VARCHAR(64) DEFAULT NULL,
+  render_width INT DEFAULT NULL,
+  render_height INT DEFAULT NULL,
+  external_platform VARCHAR(64) DEFAULT NULL,
+  external_code VARCHAR(255) DEFAULT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+  remark VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_cargo_code_record_order (inbound_order_id),
+  KEY idx_cargo_code_record_item (inbound_order_item_id),
+  KEY idx_cargo_code_record_code (cargo_code),
+  KEY idx_cargo_code_record_operation (operation_code),
+  KEY idx_cargo_code_record_location (location_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE outbound_order (
@@ -548,6 +596,30 @@ CREATE TABLE notification_message (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE scan_record (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  raw_content TEXT NOT NULL,
+  parsed_code VARCHAR(255) DEFAULT NULL,
+  scan_format VARCHAR(64) DEFAULT NULL,
+  content_format VARCHAR(64) DEFAULT NULL,
+  code_type VARCHAR(64) DEFAULT NULL,
+  merchant_platform VARCHAR(64) DEFAULT NULL,
+  matched TINYINT(1) NOT NULL DEFAULT 0,
+  entity_type VARCHAR(64) DEFAULT NULL,
+  entity_id BIGINT DEFAULT NULL,
+  warehouse_id BIGINT DEFAULT NULL,
+  source_device VARCHAR(64) DEFAULT NULL,
+  scanner_interface VARCHAR(64) DEFAULT NULL,
+  scanner_device_id VARCHAR(128) DEFAULT NULL,
+  operator_name VARCHAR(128) DEFAULT NULL,
+  remark VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_scan_record_created_at (created_at),
+  KEY idx_scan_record_parsed_code (parsed_code),
+  KEY idx_scan_record_entity (entity_type, entity_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE billing_contract (
   id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   customer_id BIGINT NOT NULL,
@@ -660,8 +732,8 @@ INSERT INTO base_location (warehouse_id, zone_name, location_code, location_name
 INSERT INTO base_owner (owner_code, owner_name, owner_type, contact_name, contact_phone, email, address, status, remark) VALUES
 ('OWN-001', '自营货主', 'SELF', '李经理', '13900000002', 'owner@example.com', '上海浦东新区', 'ACTIVE', '默认货主');
 
-INSERT INTO base_supplier (supplier_code, supplier_name, contact_name, contact_phone, email, address, status, remark) VALUES
-('SUP-001', '华东供应商', '王采购', '13900000003', 'supplier@example.com', '江苏昆山', 'ACTIVE', '默认供应商');
+INSERT INTO base_supplier (supplier_code, supplier_name, contact_name, contact_phone, warehouse_id, platform_type, email, address, status, remark) VALUES
+('SUP-001', '华东供应商', '王采购', '13900000003', 1, 'OTHER', 'supplier@example.com', '江苏昆山', 'ACTIVE', '默认供应商');
 
 INSERT INTO base_customer (customer_code, customer_name, customer_type, contact_name, contact_phone, email, address, status, remark) VALUES
 ('CUS-001', '重点客户A', 'B2B', '赵经理', '13900000004', 'customer@example.com', '浙江杭州', 'ACTIVE', '默认客户');
@@ -683,14 +755,14 @@ INSERT INTO alert_rule (rule_code, rule_name, rule_type, biz_type, threshold_val
 ('OUTBOUND_SHIP_TIMEOUT', '出库超时预警', 'TIMEOUT', 'OUTBOUND_ORDER', 60, 'MINUTE', 'HIGH', '仓库主管,客服经理', 1, '计划发货时间后60分钟未发出'),
 ('STOCK_STAGNANT', '呆滞库存预警', 'AGING', 'INVENTORY_STOCK', 30, 'DAY', 'MEDIUM', '仓库主管,销售经理', 1, '库存超过30天无变动');
 
-INSERT INTO inbound_order (order_no, warehouse_id, supplier_id, owner_id, order_type, status, source_no, expected_arrival_time, actual_arrival_time, received_at, total_expected_qty, total_actual_qty, operator_name, remark) VALUES
-('IN202604150001', 1, 1, 1, 'PURCHASE', 'RECEIVED', 'PO202604150001', DATE_SUB(NOW(), INTERVAL 4 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR), 100, 100, '系统管理员', '示例入库单，故意保留未上架用于演示滞留预警');
+INSERT INTO inbound_order (order_no, warehouse_id, supplier_id, owner_id, order_type, status, source_no, expected_arrival_time, actual_arrival_time, received_at, total_expected_qty, total_actual_qty, operator_name, scan_code, remark) VALUES
+('WMS202604150001', 1, 1, 1, 'PURCHASE', 'RECEIVED', 'PO202604150001', DATE_SUB(NOW(), INTERVAL 4 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR), 100, 100, '系统管理员', 'WMS202604150001', '示例入库单，故意保留未上架用于演示滞留预警');
 
-INSERT INTO inbound_order_item (order_id, product_id, sku_code, product_name, batch_no, production_date, expiry_date, expected_qty, actual_qty, qualified_qty, location_id, remark) VALUES
-(1, 1, 'SKU-001', '矿泉水 550ml', 'BATCH-20260415-001', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 365 DAY), 100, 100, 100, 1, '默认示例明细');
+INSERT INTO inbound_order_item (order_id, product_id, sku_code, product_name, batch_no, cargo_code, cargo_code_type, cargo_code_content, external_platform, external_code, production_date, expiry_date, expected_qty, actual_qty, qualified_qty, location_id, remark) VALUES
+(1, 1, 'SKU-001', '矿泉水 550ml', 'BATCH-20260415-001', 'WMSG202604150001', 'QR_CODE', '{"code":"WMSG202604150001","cargoCode":"WMSG202604150001","orderNo":"WMS202604150001","skuCode":"SKU-001","productName":"矿泉水 550ml","source":"WMS_INBOUND"}', 'OTHER', NULL, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 365 DAY), 100, 100, 100, 1, '默认示例明细');
 
-INSERT INTO outbound_order (order_no, warehouse_id, customer_id, owner_id, carrier_id, order_type, status, source_no, priority_level, planned_ship_time, total_planned_qty, total_shipped_qty, operator_name, remark) VALUES
-('OUT202604150001', 1, 1, 1, 1, 'SALES', 'CREATED', 'SO202604150001', 'HIGH', DATE_SUB(NOW(), INTERVAL 2 HOUR), 20, 0, '系统管理员', '示例出库单，用于演示出库超时预警');
+INSERT INTO outbound_order (order_no, warehouse_id, customer_id, owner_id, carrier_id, order_type, status, source_no, priority_level, planned_ship_time, total_planned_qty, total_shipped_qty, operator_name, logistics_no, remark) VALUES
+('WMS202604150002', 1, 1, 1, 1, 'SALES', 'CREATED', 'SO202604150001', 'HIGH', DATE_SUB(NOW(), INTERVAL 2 HOUR), 20, 0, '系统管理员', 'WMS202604150002', '示例出库单，用于演示出库超时预警');
 
 INSERT INTO outbound_order_item (order_id, product_id, sku_code, product_name, batch_no, planned_qty, shipped_qty, location_id, remark) VALUES
 (1, 1, 'SKU-001', '矿泉水 550ml', 'BATCH-20260415-001', 20, 0, 2, '默认示例明细');
@@ -700,7 +772,7 @@ INSERT INTO inventory_stock (warehouse_id, owner_id, product_id, location_id, ba
 (1, 1, 2, 3, 'BATCH-20260401-002', 80, 0, 80, DATE_SUB(NOW(), INTERVAL 10 DAY), NULL, DATE_SUB(NOW(), INTERVAL 10 DAY));
 
 INSERT INTO inventory_movement (warehouse_id, owner_id, product_id, location_id, batch_no, movement_type, source_type, source_id, source_no, before_qty, change_qty, after_qty, operator_name, remark) VALUES
-(1, 1, 1, 2, 'BATCH-20260301-001', 'INBOUND', 'INBOUND_ORDER', 1, 'IN202604150001', 200, 100, 300, '系统管理员', '初始化库存流水');
+(1, 1, 1, 2, 'BATCH-20260301-001', 'INBOUND', 'INBOUND_ORDER', 1, 'WMS202604150001', 200, 100, 300, '系统管理员', '初始化库存流水');
 
 INSERT INTO stock_take_order (take_no, warehouse_id, owner_id, take_type, status, planned_start_time, planned_end_time, operator_name, remark) VALUES
 ('TAKE202604150001', 1, 1, 'CYCLE', 'COUNTING', DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 1 DAY), '系统管理员', '默认盘点任务');
@@ -719,13 +791,13 @@ INSERT INTO billing_rule (contract_id, charge_type, rule_name, unit_name, unit_p
 (1, 'STORAGE_SNAPSHOT_QTY', '库存快照占用费', '件', 0.10, NULL, 'ACTIVE');
 
 INSERT INTO approval_order (approval_no, approval_type, biz_type, biz_id, biz_no, applicant_name, approver_name, status, current_node, apply_reason, approval_comment, applied_at, decided_at) VALUES
-('AP202604150001', 'ORDER_APPROVAL', 'OUTBOUND_ORDER', 1, 'OUT202604150001', '系统管理员', '仓库主管', 'PENDING', 'MANAGER_REVIEW', '加急订单需要主管确认', NULL, NOW(), NULL);
+('AP202604150001', 'ORDER_APPROVAL', 'OUTBOUND_ORDER', 1, 'WMS202604150002', '系统管理员', '仓库主管', 'PENDING', 'MANAGER_REVIEW', '加急订单需要主管确认', NULL, NOW(), NULL);
 
 INSERT INTO approval_record (approval_order_id, action_type, operator_name, action_comment) VALUES
 (1, 'SUBMIT', '系统管理员', '提交出库单审批');
 
 INSERT INTO exception_ticket (ticket_no, warehouse_id, biz_type, biz_id, biz_no, ticket_title, ticket_content, severity, status, assignee_name, reporter_name, approval_status, reported_at) VALUES
-('EX202604150001', 1, 'INBOUND_ORDER', 1, 'IN202604150001', 'Inbound Putaway Delay', 'The inbound order has stayed too long after receiving and still waits for putaway.', 'HIGH', 'OPEN', '仓库主管', '系统管理员', 'NOT_SUBMITTED', NOW()),
+('EX202604150001', 1, 'INBOUND_ORDER', 1, 'WMS202604150001', 'Inbound Putaway Delay', 'The inbound order has stayed too long after receiving and still waits for putaway.', 'HIGH', 'OPEN', '仓库主管', '系统管理员', 'NOT_SUBMITTED', NOW()),
 ('EX202604150002', 1, 'STOCK_TAKE_ORDER', 1, 'TAKE202604150001', 'Stock Take Difference', 'Cycle count found a quantity gap that requires review.', 'MEDIUM', 'IN_PROGRESS', '库存专员', '系统管理员', 'PENDING', NOW());
 
 SET FOREIGN_KEY_CHECKS = 1;

@@ -8,6 +8,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -30,6 +31,21 @@ public class InboundOrderItem extends BaseEntity {
     @Column(name = "batch_no")
     private String batchNo;
 
+    @Column(name = "cargo_code")
+    private String cargoCode;
+
+    @Column(name = "cargo_code_type")
+    private String cargoCodeType;
+
+    @Column(name = "cargo_code_content", length = 2048)
+    private String cargoCodeContent;
+
+    @Column(name = "external_platform")
+    private String externalPlatform;
+
+    @Column(name = "external_code")
+    private String externalCode;
+
     @Column(name = "production_date")
     private LocalDate productionDate;
 
@@ -47,6 +63,18 @@ public class InboundOrderItem extends BaseEntity {
 
     @Column(name = "location_id")
     private Long locationId;
+
+    @Column(name = "putaway_scan_confirmed", nullable = false)
+    private Boolean putawayScanConfirmed = false;
+
+    @Column(name = "putaway_scan_confirmed_at")
+    private LocalDateTime putawayScanConfirmedAt;
+
+    @Column(name = "putaway_scan_operator")
+    private String putawayScanOperator;
+
+    @Column(name = "putaway_scan_record_id")
+    private Long putawayScanRecordId;
 
     private String remark;
 }

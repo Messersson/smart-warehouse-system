@@ -22,6 +22,15 @@ const warehouseScanOptions = [
   { label: '二维码+条码', value: 'HYBRID' }
 ]
 
+const merchantPlatformOptions = [
+  { label: '淘宝', value: 'TAOBAO' },
+  { label: '天猫', value: 'TMALL' },
+  { label: '拼多多', value: 'PINDUODUO' },
+  { label: '美团', value: 'MEITUAN' },
+  { label: '淘宝闪购', value: 'TAOBAO_FLASH' },
+  { label: '其他', value: 'OTHER' }
+]
+
 export default {
   warehouses: {
     title: '仓库管理',
@@ -133,6 +142,8 @@ export default {
     columns: [
       { prop: 'supplierCode', label: '供应商编码' },
       { prop: 'supplierName', label: '供应商名称' },
+      { prop: 'platformType', label: '平台类型' },
+      { prop: 'warehouseId', label: '专属仓库', lookup: 'warehouses', displayProp: 'warehouseName' },
       { prop: 'contactName', label: '联系人' },
       { prop: 'contactPhone', label: '联系电话' },
       { prop: 'status', label: '状态' }
@@ -140,6 +151,8 @@ export default {
     fields: [
       { prop: 'supplierCode', label: '供应商编码', type: 'text', required: true },
       { prop: 'supplierName', label: '供应商名称', type: 'text', required: true },
+      { prop: 'platformType', label: '平台类型', type: 'select', options: merchantPlatformOptions },
+      { prop: 'warehouseId', label: '专属仓库', type: 'lookup-select', lookup: 'warehouses', valueProp: 'id', labelProp: 'warehouseName' },
       { prop: 'contactName', label: '联系人', type: 'text' },
       { prop: 'contactPhone', label: '联系电话', type: 'text' },
       { prop: 'email', label: '邮箱', type: 'text' },
@@ -197,7 +210,7 @@ export default {
       { prop: 'categoryName', label: '分类', type: 'text' },
       { prop: 'brandName', label: '品牌', type: 'text' },
       { prop: 'unitName', label: '单位', type: 'text', required: true },
-      { prop: 'barcode', label: '条码', type: 'text' },
+      { prop: 'barcode', label: '条形码（留空自动生成）', type: 'text' },
       { prop: 'safeStock', label: '安全库存', type: 'number' },
       { prop: 'maxStock', label: '最大库存', type: 'number' },
       { prop: 'shelfLifeDays', label: '保质期天数', type: 'number' },

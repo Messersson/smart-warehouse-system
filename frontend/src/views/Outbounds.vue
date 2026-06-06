@@ -11,7 +11,7 @@
     </div>
 
     <el-table :data="rows" stripe border>
-      <el-table-column prop="orderNo" label="出库单号" min-width="160" />
+      <el-table-column prop="orderNo" label="作业编码" min-width="170" />
       <el-table-column prop="warehouseName" label="仓库" min-width="120" />
       <el-table-column prop="customerName" label="客户" min-width="120" />
       <el-table-column prop="status" label="状态" width="140">
@@ -21,12 +21,13 @@
       </el-table-column>
       <el-table-column prop="priorityLevel" label="优先级" width="100" />
       <el-table-column prop="totalPlannedQty" label="计划数量" width="120" />
+      <el-table-column prop="totalShippedQty" label="已扫数量" width="120" />
       <el-table-column prop="plannedShipTime" label="计划发运" min-width="180" />
       <el-table-column label="操作" width="340" fixed="right">
         <template slot-scope="scope">
           <el-button type="text" @click="openDetail(scope.row)">明细</el-button>
           <el-button type="text" @click="handlePicking(scope.row)" :disabled="scope.row.status !== 'CREATED'">拣货完成</el-button>
-          <el-button type="text" @click="handleShip(scope.row)" :disabled="scope.row.status === 'SHIPPED'">发运</el-button>
+          <el-button type="text" @click="openScanShip(scope.row)" :disabled="scope.row.status === 'SHIPPED'">扫码出库</el-button>
           <el-button type="text" @click="submitApproval(scope.row)">提交审批</el-button>
         </template>
       </el-table-column>
@@ -36,8 +37,8 @@
       <el-form :model="form" label-width="100px">
         <el-row :gutter="16">
           <el-col :span="8">
-            <el-form-item label="出库单号">
-              <el-input v-model="form.orderNo" placeholder="可留空自动生成" />
+            <el-form-item label="作业编码">
+              <el-input v-model="form.orderNo" placeholder="可留空自动生成统一编码" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -108,9 +109,9 @@
               <el-input-number v-model="scope.row.plannedQty" :min="0" :controls="false" style="width: 100%" />
             </template>
           </el-table-column>
-          <el-table-column label="已发数量" width="120">
+          <el-table-column label="已扫数量" width="120">
             <template slot-scope="scope">
-              <el-input-number v-model="scope.row.shippedQty" :min="0" :controls="false" style="width: 100%" />
+              <span>{{ scope.row.shippedQty || 0 }}</span>
             </template>
           </el-table-column>
           <el-table-column label="拣货库位" min-width="180">
@@ -135,7 +136,7 @@
 
     <el-dialog title="出库单明细" :visible.sync="detailVisible" width="920px">
       <el-descriptions :column="3" border v-if="currentRow.id">
-        <el-descriptions-item label="出库单号">{{ currentRow.orderNo }}</el-descriptions-item>
+        <el-descriptions-item label="作业编码">{{ currentRow.orderNo }}</el-descriptions-item>
         <el-descriptions-item label="仓库">{{ currentRow.warehouseName }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ currentRow.status }}</el-descriptions-item>
         <el-descriptions-item label="客户">{{ currentRow.customerName }}</el-descriptions-item>
@@ -147,9 +148,60 @@
         <el-table-column prop="productName" label="商品名称" min-width="160" />
         <el-table-column prop="batchNo" label="批次号" min-width="140" />
         <el-table-column prop="plannedQty" label="计划数量" width="120" />
-        <el-table-column prop="shippedQty" label="已发数量" width="120" />
+        <el-table-column prop="shippedQty" label="已扫数量" width="120" />
         <el-table-column prop="locationId" label="库位ID" width="120" />
       </el-table>
+    </el-dialog>
+
+    <el-dialog title="扫码出库" :visible.sync="scanShipVisible" width="980px" @closed="resetScanShip">
+      <div v-if="scanShipOrder.id" class="scan-ship-dialog">
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="作业编码">{{ scanShipOrder.orderNo }}</el-descriptions-item>
+          <el-descriptions-item label="仓库">{{ scanShipOrder.warehouseName }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ scanShipOrder.status }}</el-descriptions-item>
+          <el-descriptions-item label="计划数量">{{ scanShipOrder.totalPlannedQty }}</el-descriptions-item>
+          <el-descriptions-item label="已扫数量">{{ scanShipOrder.totalShippedQty }}</el-descriptions-item>
+          <el-descriptions-item label="扫码进度">{{ scanShipCompleted ? '已完成' : '待扫码' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="scan-ship-bar">
+          <el-select v-model="scanShipFormat" class="scan-ship-format">
+            <el-option label="自动识别" value="AUTO" />
+            <el-option label="二维码" value="QR_CODE" />
+            <el-option label="条形码" value="BAR_CODE" />
+            <el-option label="Data Matrix" value="DATA_MATRIX" />
+            <el-option label="PDF417" value="PDF_417" />
+            <el-option label="Aztec" value="AZTEC" />
+            <el-option label="其他" value="OTHER" />
+          </el-select>
+          <el-input
+            ref="scanShipInput"
+            v-model="scanShipCode"
+            placeholder="扫描商品条码/SKU/二维码内容后回车"
+            @keyup.enter.native="submitScanShipCode"
+          />
+          <el-button type="primary" :loading="scanShipLoading" @click="submitScanShipCode">确认扫码</el-button>
+        </div>
+
+        <el-table :data="scanShipOrder.items || []" border size="small">
+          <el-table-column prop="skuCode" label="SKU" min-width="140" />
+          <el-table-column prop="productName" label="商品名称" min-width="160" />
+          <el-table-column prop="batchNo" label="批次号" min-width="130" />
+          <el-table-column prop="plannedQty" label="应扫数量" width="120" />
+          <el-table-column prop="shippedQty" label="已扫数量" width="120" />
+          <el-table-column label="状态" width="110">
+            <template slot-scope="scope">
+              <el-tag :type="scanItemCompleted(scope.row) ? 'success' : 'warning'" size="mini">
+                {{ scanItemCompleted(scope.row) ? '完成' : '待扫码' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <span slot="footer">
+        <el-button @click="scanShipVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="shipLoading" :disabled="!scanShipCompleted" @click="finishScanShip">完成出库</el-button>
+      </span>
     </el-dialog>
   </div>
 </template>
@@ -174,6 +226,12 @@ export default {
       lookups: {},
       dialogVisible: false,
       detailVisible: false,
+      scanShipVisible: false,
+      scanShipOrder: {},
+      scanShipCode: '',
+      scanShipFormat: 'AUTO',
+      scanShipLoading: false,
+      shipLoading: false,
       currentRow: {},
       form: {
         orderNo: '',
@@ -186,6 +244,12 @@ export default {
         remark: '',
         items: [createItem()]
       }
+    }
+  },
+  computed: {
+    scanShipCompleted() {
+      const items = this.scanShipOrder.items || []
+      return items.length > 0 && items.every(item => this.toNumber(item.shippedQty) >= this.toNumber(item.plannedQty))
     }
   },
   async created() {
@@ -252,9 +316,79 @@ export default {
         await post(`/outbounds/${row.id}/ship`)
         this.$message.success('发运完成')
         await this.fetchRows()
+        return true
       } catch (error) {
         this.$message.error(error.message || '发运失败')
+        return false
       }
+    },
+    async openScanShip(row) {
+      try {
+        const response = await get(`/outbounds/${row.id}`)
+        this.scanShipOrder = response.data || row
+        this.scanShipCode = ''
+        this.scanShipFormat = 'AUTO'
+        this.scanShipVisible = true
+        this.$nextTick(() => {
+          if (this.$refs.scanShipInput) {
+            this.$refs.scanShipInput.focus()
+          }
+        })
+      } catch (error) {
+        this.$message.error(error.message || '打开扫码出库失败')
+      }
+    },
+    async submitScanShipCode() {
+      if (!this.scanShipCode.trim()) {
+        this.$message.error('请先扫描商品条码或二维码')
+        return
+      }
+      try {
+        this.scanShipLoading = true
+        const response = await post(`/outbounds/${this.scanShipOrder.id}/scan-ship`, {
+          rawContent: this.scanShipCode.trim(),
+          scanFormat: this.scanShipFormat,
+          sourceDevice: 'WEB_OUTBOUND',
+          operatorName: '系统管理员'
+        })
+        this.scanShipOrder = response.data || this.scanShipOrder
+        this.scanShipCode = ''
+        this.$message.success('扫码确认成功')
+        await this.fetchRows()
+        this.$nextTick(() => {
+          if (this.$refs.scanShipInput) {
+            this.$refs.scanShipInput.focus()
+          }
+        })
+      } catch (error) {
+        this.$message.error(error.message || '扫码确认失败')
+      } finally {
+        this.scanShipLoading = false
+      }
+    },
+    async finishScanShip() {
+      try {
+        this.shipLoading = true
+        const success = await this.handleShip(this.scanShipOrder)
+        if (success) {
+          this.scanShipVisible = false
+        }
+      } finally {
+        this.shipLoading = false
+      }
+    },
+    resetScanShip() {
+      this.scanShipCode = ''
+      this.scanShipOrder = {}
+      this.shipLoading = false
+      this.scanShipLoading = false
+    },
+    scanItemCompleted(item) {
+      return this.toNumber(item.shippedQty) >= this.toNumber(item.plannedQty)
+    },
+    toNumber(value) {
+      const number = Number(value)
+      return Number.isFinite(number) ? number : 0
     },
     async submitApproval(row) {
       try {
@@ -280,3 +414,31 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.scan-ship-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scan-ship-bar {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 8px;
+}
+
+.scan-ship-format {
+  width: 140px;
+}
+
+@media (max-width: 760px) {
+  .scan-ship-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .scan-ship-format {
+    width: 100%;
+  }
+}
+</style>

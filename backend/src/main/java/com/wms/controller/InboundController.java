@@ -3,6 +3,7 @@ package com.wms.controller;
 import com.wms.common.ApiResponse;
 import com.wms.dto.InboundOrderRequest;
 import com.wms.dto.InboundPickupActionRequest;
+import com.wms.dto.InboundPutawayScanRequest;
 import com.wms.service.InboundService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,11 @@ public class InboundController {
     @PostMapping("/{id}/putaway")
     public ApiResponse<?> putaway(@PathVariable Long id) {
         return ApiResponse.ok("putaway completed", inboundService.putaway(id));
+    }
+
+    @PostMapping("/scan-putaway")
+    public ApiResponse<?> scanPutaway(@RequestBody InboundPutawayScanRequest request) {
+        return ApiResponse.ok("scan putaway confirmed", inboundService.scanPutaway(request));
     }
 
     @PostMapping("/{id}/pickup-action")

@@ -52,7 +52,7 @@
           <el-button type="text" icon="el-icon-right" @click="$router.push('/inbounds')">查看全部</el-button>
         </div>
         <el-table :data="overview.recentInbounds || []" :empty-text="labels.noData" stripe>
-          <el-table-column prop="orderNo" label="入库单号" min-width="150" />
+          <el-table-column prop="orderNo" label="作业编码" min-width="150" />
           <el-table-column prop="status" label="状态" width="120" />
           <el-table-column prop="totalExpectedQty" label="预计数量" width="110" />
           <el-table-column prop="receivedAt" label="收货时间" min-width="160" />
@@ -65,7 +65,7 @@
           <el-button type="text" icon="el-icon-right" @click="$router.push('/outbounds')">查看全部</el-button>
         </div>
         <el-table :data="overview.recentOutbounds || []" :empty-text="labels.noData" stripe>
-          <el-table-column prop="orderNo" label="出库单号" min-width="150" />
+          <el-table-column prop="orderNo" label="作业编码" min-width="150" />
           <el-table-column prop="status" label="状态" width="120" />
           <el-table-column prop="totalPlannedQty" label="计划数量" width="110" />
           <el-table-column prop="plannedShipTime" label="计划发运" min-width="160" />

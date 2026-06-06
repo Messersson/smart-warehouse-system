@@ -226,6 +226,7 @@ public class StockTakeService {
             detailMap.put("productId", detail.getProductId());
             detailMap.put("skuCode", productMap.get(detail.getProductId()) == null ? null : productMap.get(detail.getProductId()).getSkuCode());
             detailMap.put("productName", productMap.get(detail.getProductId()) == null ? null : productMap.get(detail.getProductId()).getProductName());
+            detailMap.put("barcode", productMap.get(detail.getProductId()) == null ? null : productMap.get(detail.getProductId()).getBarcode());
             detailMap.put("systemQty", detail.getSystemQty());
             detailMap.put("actualQty", detail.getActualQty());
             detailMap.put("diffQty", detail.getDiffQty());

@@ -55,10 +55,13 @@ public class StockService {
                         return true;
                     }
                     Product product = productMap.get(stock.getProductId());
+                    Location location = locationMap.get(stock.getLocationId());
                     String loweredKeyword = keyword.toLowerCase();
                     return (stock.getBatchNo() != null && stock.getBatchNo().toLowerCase().contains(loweredKeyword))
                             || (product != null && product.getSkuCode() != null && product.getSkuCode().toLowerCase().contains(loweredKeyword))
-                            || (product != null && product.getProductName() != null && product.getProductName().toLowerCase().contains(loweredKeyword));
+                            || (product != null && product.getProductName() != null && product.getProductName().toLowerCase().contains(loweredKeyword))
+                            || (product != null && product.getBarcode() != null && product.getBarcode().toLowerCase().contains(loweredKeyword))
+                            || (location != null && location.getLocationCode() != null && location.getLocationCode().toLowerCase().contains(loweredKeyword));
                 })
                 .map(stock -> {
                     Product product = productMap.get(stock.getProductId());
@@ -71,8 +74,10 @@ public class StockService {
                     item.put("productId", stock.getProductId());
                     item.put("skuCode", product == null ? null : product.getSkuCode());
                     item.put("productName", product == null ? null : product.getProductName());
+                    item.put("barcode", product == null ? null : product.getBarcode());
                     item.put("locationId", stock.getLocationId());
                     item.put("locationCode", location == null ? null : location.getLocationCode());
+                    item.put("locationName", location == null ? null : location.getLocationName());
                     item.put("batchNo", stock.getBatchNo());
                     item.put("quantity", stock.getQuantity());
                     item.put("lockedQty", stock.getLockedQty());

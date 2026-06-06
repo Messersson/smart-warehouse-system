@@ -13,6 +13,10 @@ public class InboundOrderItemRequest {
     @NotNull(message = "\u4e0d\u80fd\u4e3a\u7a7a")
     private Long productId;
     private String batchNo;
+    private String cargoCodeType;
+    private String cargoCode;
+    private String externalPlatform;
+    private String externalCode;
     private LocalDate productionDate;
     private LocalDate expiryDate;
     @NotNull(message = "\u4e0d\u80fd\u4e3a\u7a7a")

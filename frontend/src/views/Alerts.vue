@@ -152,7 +152,7 @@ export default {
 
       matched = message.match(/^Warehouse (.+) order (.+) has exceeded dwell time\. Receiver=(.+), phone=(.+), pickupCode=(.+)$/)
       if (matched) {
-        return `仓库 ${matched[1]} 的入库单 ${matched[2]} 已超过滞留时长，收件人：${matched[3]}，联系电话：${matched[4]}，取件码：${matched[5]}`
+        return `仓库 ${matched[1]} 的入库单 ${matched[2]} 已超过滞留时长，收件人：${matched[3]}，联系电话：${matched[4]}，作业编码：${matched[5]}`
       }
 
       return message

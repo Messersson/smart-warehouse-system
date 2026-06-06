@@ -12,7 +12,6 @@ import java.util.List;
 public class InboundOrderRequest {
 
     private String orderNo;
-    @NotNull(message = "\u4e0d\u80fd\u4e3a\u7a7a")
     private Long warehouseId;
     private Long supplierId;
     @NotNull(message = "\u4e0d\u80fd\u4e3a\u7a7a")

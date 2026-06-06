@@ -235,7 +235,7 @@ public class AlertService {
                 + defaultText(order.getReceiverName(), "未知")
                 + "，联系电话："
                 + defaultText(order.getReceiverPhone(), "-")
-                + "，取件码："
+                + "，作业编码："
                 + defaultText(order.getPickupCode(), defaultText(order.getScanCode(), "-"));
     }
 

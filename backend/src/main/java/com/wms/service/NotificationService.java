@@ -60,7 +60,7 @@ public class NotificationService {
     private String buildPickupMessage(Warehouse warehouse, InboundOrder order) {
         String dueAt = order.getPickupDueAt() == null ? "请尽快处理" : order.getPickupDueAt().toString().replace('T', ' ');
         return String.format(
-                "【%s】您的包裹/商品单号 %s 已超过设定滞留时长。请确认是否拒收或延迟取货，截止时间：%s，取件码：%s。",
+                "【%s】您的包裹/商品单号 %s 已超过设定滞留时长。请确认是否拒收或延迟取货，截止时间：%s，作业编码：%s。",
                 defaultText(warehouse.getWarehouseName(), "仓库"),
                 defaultText(order.getOrderNo(), "-"),
                 dueAt,

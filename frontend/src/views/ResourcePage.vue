@@ -73,9 +73,17 @@
           <span>{{ displayValue(scope.row, column) }}</span>
         </template>
       </el-table-column>
-      <el-table-column :label="labels.actions" width="180" fixed="right">
+      <el-table-column :label="labels.actions" :width="resourceKey === 'products' ? 240 : 180" fixed="right">
         <template slot-scope="scope">
           <el-button type="text" @click="openEdit(scope.row)">{{ labels.edit }}</el-button>
+          <el-button
+            v-if="resourceKey === 'products'"
+            type="text"
+            :loading="barcodeGeneratingId === scope.row.id"
+            @click="openBarcode(scope.row)"
+          >
+            条码
+          </el-button>
           <el-button
             type="text"
             class="text-danger"
@@ -158,12 +166,140 @@
         <el-button type="primary" :loading="submitting" @click="submit">{{ labels.save }}</el-button>
       </span>
     </el-dialog>
+
+    <el-dialog
+      title="货物条码标签"
+      :visible.sync="barcodeVisible"
+      width="520px"
+      class="barcode-dialog"
+    >
+      <div v-if="barcodeProduct.id" class="barcode-preview">
+        <div class="barcode-label" ref="barcodeLabel">
+          <div class="barcode-product-name">{{ barcodeProduct.productName }}</div>
+          <div class="barcode-product-meta">{{ barcodeProduct.skuCode }} / {{ barcodeProduct.productSpec || '-' }}</div>
+          <div class="barcode-svg-box" v-html="barcodeSvg"></div>
+          <div class="barcode-value">{{ barcodeProduct.barcode }}</div>
+        </div>
+        <el-alert
+          v-if="barcodeError"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="barcodeError"
+        />
+      </div>
+      <span slot="footer">
+        <el-button @click="downloadBarcodeSvg">下载 SVG</el-button>
+        <el-button type="primary" :disabled="!!barcodeError" @click="printBarcodeLabel">打印标签</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import { get, post, put, remove } from '../api'
 import resourceConfig from '../config/resource-config'
+
+const code39Patterns = {
+  '0': 'nnnwwnwnn',
+  '1': 'wnnwnnnnw',
+  '2': 'nnwwnnnnw',
+  '3': 'wnwwnnnnn',
+  '4': 'nnnwwnnnw',
+  '5': 'wnnwwnnnn',
+  '6': 'nnwwwnnnn',
+  '7': 'nnnwnnwnw',
+  '8': 'wnnwnnwnn',
+  '9': 'nnwwnnwnn',
+  A: 'wnnnnwnnw',
+  B: 'nnwnnwnnw',
+  C: 'wnwnnwnnn',
+  D: 'nnnnwwnnw',
+  E: 'wnnnwwnnn',
+  F: 'nnwnwwnnn',
+  G: 'nnnnnwwnw',
+  H: 'wnnnnwwnn',
+  I: 'nnwnnwwnn',
+  J: 'nnnnwwwnn',
+  K: 'wnnnnnnww',
+  L: 'nnwnnnnww',
+  M: 'wnwnnnnwn',
+  N: 'nnnnwnnww',
+  O: 'wnnnwnnwn',
+  P: 'nnwnwnnwn',
+  Q: 'nnnnnnwww',
+  R: 'wnnnnnwwn',
+  S: 'nnwnnnwwn',
+  T: 'nnnnwnwwn',
+  U: 'wwnnnnnnw',
+  V: 'nwwnnnnnw',
+  W: 'wwwnnnnnn',
+  X: 'nwnnwnnnw',
+  Y: 'wwnnwnnnn',
+  Z: 'nwwnwnnnn',
+  '-': 'nwnnnnwnw',
+  '.': 'wwnnnnwnn',
+  ' ': 'nwwnnnwnn',
+  '$': 'nwnwnwnnn',
+  '/': 'nwnwnnnwn',
+  '+': 'nwnnnwnwn',
+  '%': 'nnnwnwnwn',
+  '*': 'nwnnwnwnn'
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function normalizeBarcode(value) {
+  return String(value || '').trim().toUpperCase()
+}
+
+function buildCode39Svg(value) {
+  const code = normalizeBarcode(value)
+  if (!code) {
+    throw new Error('当前商品还没有条码')
+  }
+  const fullCode = `*${code}*`
+  const invalid = fullCode.split('').find(char => !code39Patterns[char])
+  if (invalid) {
+    throw new Error(`条码包含 Code 39 不支持的字符：${invalid}`)
+  }
+
+  const narrow = 2
+  const wide = 5
+  const gap = narrow
+  const margin = 14
+  const barTop = 12
+  const barHeight = 70
+  let x = margin
+  const rects = []
+
+  fullCode.split('').forEach(char => {
+    const pattern = code39Patterns[char]
+    pattern.split('').forEach((part, index) => {
+      const width = part === 'w' ? wide : narrow
+      if (index % 2 === 0) {
+        rects.push(`<rect x="${x}" y="${barTop}" width="${width}" height="${barHeight}" fill="#111827" />`)
+      }
+      x += width
+    })
+    x += gap
+  })
+
+  const width = x + margin - gap
+  const height = 112
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(code)}">
+    <rect width="100%" height="100%" fill="#ffffff" />
+    ${rects.join('')}
+    <text x="${width / 2}" y="102" text-anchor="middle" font-family="Consolas, monospace" font-size="14" fill="#111827">${escapeHtml(code)}</text>
+  </svg>`
+}
 
 const labels = {
   description: '\u7ef4\u62a4\u4e1a\u52a1\u4e3b\u6570\u636e\uff0c\u4e3a\u4ed3\u50a8\u4f5c\u4e1a\u4e0e\u9884\u8b66\u63d0\u4f9b\u57fa\u7840\u6863\u6848\u3002',
@@ -206,6 +342,9 @@ export default {
       submitting: false,
       deletingId: null,
       dialogVisible: false,
+      barcodeVisible: false,
+      barcodeGeneratingId: null,
+      barcodeProduct: {},
       form: {},
       labels
     }
@@ -260,6 +399,27 @@ export default {
     },
     emptyText() {
       return this.keyword ? labels.noSearchResults : labels.noData
+    },
+    barcodeSvg() {
+      if (!this.barcodeProduct.barcode) {
+        return ''
+      }
+      try {
+        return buildCode39Svg(this.barcodeProduct.barcode)
+      } catch (error) {
+        return ''
+      }
+    },
+    barcodeError() {
+      if (!this.barcodeProduct.barcode) {
+        return ''
+      }
+      try {
+        buildCode39Svg(this.barcodeProduct.barcode)
+        return ''
+      } catch (error) {
+        return error.message || '条码生成失败'
+      }
     }
   },
   watch: {
@@ -328,15 +488,21 @@ export default {
       }
       this.submitting = true
       try {
+        let saved = null
         if (this.form.id) {
-          await put(`${this.config.endpoint}/${this.form.id}`, this.form)
+          const response = await put(`${this.config.endpoint}/${this.form.id}`, this.form)
+          saved = response.data
           this.$message.success(labels.updateSuccess)
         } else {
-          await post(this.config.endpoint, this.form)
+          const response = await post(this.config.endpoint, this.form)
+          saved = response.data
           this.$message.success(labels.createSuccess)
         }
         this.dialogVisible = false
         await this.fetchRows()
+        if (this.resourceKey === 'products' && saved) {
+          this.openBarcode(saved)
+        }
       } catch (error) {
         this.$message.error(error.message || labels.saveFailed)
       } finally {
@@ -393,6 +559,89 @@ export default {
           this.$refs.formRef.clearValidate()
         }
       })
+    },
+    async openBarcode(row) {
+      let product = row
+      if (!product.barcode) {
+        try {
+          this.barcodeGeneratingId = product.id
+          const response = await put(`${this.config.endpoint}/${product.id}`, { ...product, barcode: '' })
+          product = response.data || product
+          await this.fetchRows()
+        } catch (error) {
+          this.$message.error(error.message || '条码生成失败')
+          return
+        } finally {
+          this.barcodeGeneratingId = null
+        }
+      }
+      this.barcodeProduct = JSON.parse(JSON.stringify(product))
+      this.barcodeVisible = true
+    },
+    downloadBarcodeSvg() {
+      if (this.barcodeError || !this.barcodeSvg) {
+        this.$message.error(this.barcodeError || '条码生成失败')
+        return
+      }
+      const blob = new Blob([this.barcodeSvg], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${this.barcodeProduct.barcode || 'barcode'}.svg`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    },
+    printBarcodeLabel() {
+      if (this.barcodeError || !this.barcodeSvg) {
+        this.$message.error(this.barcodeError || '条码生成失败')
+        return
+      }
+      const frame = document.createElement('iframe')
+      frame.style.position = 'fixed'
+      frame.style.right = '0'
+      frame.style.bottom = '0'
+      frame.style.width = '0'
+      frame.style.height = '0'
+      frame.style.border = '0'
+      document.body.appendChild(frame)
+
+      const doc = frame.contentWindow.document
+      doc.open()
+      doc.write(`
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>${escapeHtml(this.barcodeProduct.barcode)}</title>
+            <style>
+              @page { size: 70mm 42mm; margin: 4mm; }
+              * { box-sizing: border-box; }
+              body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: #111827; }
+              .label { width: 62mm; min-height: 34mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; }
+              .name { width: 100%; text-align: center; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+              .meta { width: 100%; text-align: center; font-size: 10px; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+              svg { max-width: 58mm; height: 22mm; }
+              .code { font-size: 10px; letter-spacing: 0.08em; }
+            </style>
+          </head>
+          <body>
+            <div class="label">
+              <div class="name">${escapeHtml(this.barcodeProduct.productName)}</div>
+              <div class="meta">${escapeHtml(this.barcodeProduct.skuCode)} / ${escapeHtml(this.barcodeProduct.productSpec || '-')}</div>
+              ${this.barcodeSvg}
+              <div class="code">${escapeHtml(this.barcodeProduct.barcode)}</div>
+            </div>
+          </body>
+        </html>
+      `)
+      doc.close()
+      setTimeout(() => {
+        frame.contentWindow.focus()
+        frame.contentWindow.print()
+        setTimeout(() => document.body.removeChild(frame), 500)
+      }, 100)
     },
     buildPlaceholder(label) {
       return `${labels.inputPrefix}${label}`
@@ -487,6 +736,59 @@ export default {
   color: #64748b;
   font-size: 13px;
   word-break: break-all;
+}
+
+.barcode-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.barcode-label {
+  width: 100%;
+  min-height: 230px;
+  padding: 18px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.barcode-product-name {
+  max-width: 100%;
+  color: #111827;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barcode-product-meta,
+.barcode-value {
+  max-width: 100%;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barcode-value {
+  color: #111827;
+  font-family: Consolas, monospace;
+  letter-spacing: 0.06em;
+}
+
+.barcode-svg-box {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 @media (max-width: 760px) {

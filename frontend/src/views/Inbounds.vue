@@ -3,17 +3,25 @@
     <div class="page-toolbar">
       <div>
         <h2 style="margin: 0">入库管理</h2>
-        <div style="color: #64748b; margin-top: 6px">管理收货、上架和入库滞留情况。</div>
+      <div style="color: #64748b; margin-top: 6px">管理收货、标签打印、扫码确认、上架和入库滞留情况。</div>
       </div>
       <div>
+        <el-button @click="openCargoCodeRecords">已生成码记录</el-button>
         <el-button type="primary" @click="openCreate">新建入库单</el-button>
       </div>
     </div>
 
     <el-table :data="rows" stripe border>
-      <el-table-column prop="orderNo" label="入库单号" min-width="160" />
+      <el-table-column prop="orderNo" label="作业编码" min-width="170" />
       <el-table-column prop="warehouseName" label="仓库" min-width="120" />
       <el-table-column prop="supplierName" label="供应商" min-width="120" />
+      <el-table-column label="标签扫码" width="110">
+        <template slot-scope="scope">
+          <el-tag :type="allItemsScanConfirmed(scope.row) ? 'success' : 'warning'">
+            {{ allItemsScanConfirmed(scope.row) ? '已确认' : '待扫码' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" width="120">
         <template slot-scope="scope">
           <el-tag :type="statusType(scope.row.status)">{{ scope.row.status }}</el-tag>
@@ -26,7 +34,7 @@
         <template slot-scope="scope">
           <el-button type="text" @click="openDetail(scope.row)">明细</el-button>
           <el-button type="text" @click="handleReceive(scope.row)" :disabled="scope.row.status !== 'CREATED'">收货</el-button>
-          <el-button type="text" @click="handlePutaway(scope.row)" :disabled="scope.row.status === 'PUTAWAY_COMPLETED'">上架</el-button>
+          <el-button type="text" @click="handlePutaway(scope.row)" :disabled="scope.row.status === 'PUTAWAY_COMPLETED'">扫码后上架</el-button>
           <el-button type="text" @click="submitApproval(scope.row)">提交审批</el-button>
         </template>
       </el-table-column>
@@ -36,15 +44,18 @@
       <el-form :model="form" label-width="100px">
         <el-row :gutter="16">
           <el-col :span="8">
-            <el-form-item label="入库单号">
-              <el-input v-model="form.orderNo" placeholder="可留空自动生成" />
+            <el-form-item label="作业编码">
+              <el-input v-model="form.orderNo" placeholder="可留空自动生成统一编码" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="所属仓库">
-              <el-select v-model="form.warehouseId" filterable style="width: 100%">
+              <el-select v-model="form.warehouseId" filterable style="width: 100%" :disabled="!!selectedSupplierWarehouse">
                 <el-option v-for="item in lookups.warehouses || []" :key="item.id" :label="item.warehouseName" :value="item.id" />
               </el-select>
+              <div v-if="selectedSupplierWarehouse" class="form-tip">
+                已按供应商专属仓库自动分配：{{ selectedSupplierWarehouse.warehouseName }}
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -99,6 +110,36 @@
               <el-input v-model="scope.row.batchNo" />
             </template>
           </el-table-column>
+          <el-table-column label="货物码类型" width="130">
+            <template slot-scope="scope">
+              <el-select v-model="scope.row.cargoCodeType" style="width: 100%">
+                <el-option label="二维码" value="QR_CODE" />
+                <el-option label="条形码" value="BAR_CODE" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="指定货物码" min-width="170">
+            <template slot-scope="scope">
+              <el-input v-model="scope.row.cargoCode" placeholder="留空自动生成" />
+            </template>
+          </el-table-column>
+          <el-table-column label="商家平台" width="130">
+            <template slot-scope="scope">
+              <el-select v-model="scope.row.externalPlatform" clearable style="width: 100%">
+                <el-option label="淘宝" value="TAOBAO" />
+                <el-option label="天猫" value="TMALL" />
+                <el-option label="拼多多" value="PINDUODUO" />
+                <el-option label="美团" value="MEITUAN" />
+                <el-option label="淘宝闪购" value="TAOBAO_FLASH" />
+                <el-option label="其他" value="OTHER" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="外部商家码" min-width="170">
+            <template slot-scope="scope">
+              <el-input v-model="scope.row.externalCode" placeholder="可粘贴平台订单/包裹码" />
+            </template>
+          </el-table-column>
           <el-table-column label="预计数量" width="120">
             <template slot-scope="scope">
               <el-input-number v-model="scope.row.expectedQty" :min="0" :controls="false" style="width: 100%" />
@@ -147,7 +188,7 @@
 
     <el-dialog title="入库单明细" :visible.sync="detailVisible" width="920px">
       <el-descriptions :column="3" border v-if="currentRow.id">
-        <el-descriptions-item label="入库单号">{{ currentRow.orderNo }}</el-descriptions-item>
+        <el-descriptions-item label="作业编码">{{ currentRow.orderNo }}</el-descriptions-item>
         <el-descriptions-item label="仓库">{{ currentRow.warehouseName }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ currentRow.status }}</el-descriptions-item>
         <el-descriptions-item label="供应商">{{ currentRow.supplierName }}</el-descriptions-item>
@@ -158,11 +199,92 @@
         <el-table-column prop="skuCode" label="SKU" min-width="140" />
         <el-table-column prop="productName" label="商品名称" min-width="160" />
         <el-table-column prop="batchNo" label="批次号" min-width="140" />
+        <el-table-column prop="cargoCodeType" label="码类型" width="100" />
+        <el-table-column prop="cargoCode" label="货物码" min-width="170" />
+        <el-table-column prop="externalPlatform" label="商家平台" width="110" />
+        <el-table-column prop="externalCode" label="外部商家码" min-width="160" />
+        <el-table-column prop="cargoCodeContent" label="码内容" min-width="220" show-overflow-tooltip />
+        <el-table-column label="库位" min-width="170">
+          <template slot-scope="scope">
+            {{ scope.row.locationFullName || resolveLocationText(scope.row.locationId) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="扫码确认" width="110">
+          <template slot-scope="scope">
+            <el-tag :type="scope.row.putawayScanConfirmed ? 'success' : 'warning'">
+              {{ scope.row.putawayScanConfirmed ? '已确认' : '待扫码' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="码标签" width="100">
+          <template slot-scope="scope">
+            <el-button type="text" @click="openCargoCode(scope.row)">预览</el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="expectedQty" label="预计数量" width="120" />
         <el-table-column prop="actualQty" label="实收数量" width="120" />
         <el-table-column prop="qualifiedQty" label="合格数量" width="120" />
         <el-table-column prop="locationId" label="库位ID" width="120" />
       </el-table>
+    </el-dialog>
+
+    <el-dialog title="货物码标签" :visible.sync="cargoCodeVisible" width="620px">
+      <div v-if="cargoCodeItem.id" class="cargo-code-preview">
+        <div class="cargo-code-label" ref="cargoCodeLabel">
+          <div class="cargo-code-title">{{ cargoCodeItem.productName }}</div>
+          <div class="cargo-code-meta">
+            作业 {{ cargoCodeItem.operationCode || cargoCodeItem.orderNo || '-' }}
+          </div>
+          <div class="cargo-code-meta">
+            库位 {{ cargoCodeItem.locationFullName || cargoCodeItem.locationCode || resolveLocationText(cargoCodeItem.locationId) }}
+          </div>
+          <div class="cargo-code-meta">
+            {{ cargoCodeItem.skuCode }} / {{ cargoCodeItem.batchNo || '-' }}
+          </div>
+          <div v-if="cargoCodeSvg" class="code-svg-box" v-html="cargoCodeSvg"></div>
+          <div v-else class="code-render-placeholder">
+            {{ cargoCodeRenderLoading ? '码图形生成中...' : cargoCodeRenderError || '暂无码图形' }}
+          </div>
+          <div class="cargo-code-value">{{ cargoCodeItem.cargoCode }}</div>
+          <div class="cargo-code-meta">
+            {{ platformText(cargoCodeItem.externalPlatform) }} / {{ cargoCodeItem.externalCode || '无外部码' }}
+          </div>
+        </div>
+      </div>
+      <span slot="footer">
+        <el-button @click="copyText(cargoCodeRawContent(cargoCodeItem))">复制码内容</el-button>
+        <el-button type="primary" :loading="cargoCodeRenderLoading" :disabled="!cargoCodeSvg" @click="printCargoCodeLabel">打印标签</el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog title="已生成码记录" :visible.sync="cargoCodeRecordsVisible" width="1040px">
+      <el-table :data="cargoCodeRecords" border v-loading="cargoCodeRecordsLoading">
+        <el-table-column prop="id" label="记录ID" width="90" />
+        <el-table-column prop="cargoCodeType" label="码类型" width="100">
+          <template slot-scope="scope">{{ codeTypeText(scope.row.cargoCodeType) }}</template>
+        </el-table-column>
+        <el-table-column prop="cargoCode" label="货物码" min-width="190" />
+        <el-table-column prop="operationCode" label="作业编码" min-width="170" />
+        <el-table-column label="库位" min-width="190">
+          <template slot-scope="scope">
+            {{ scope.row.locationCode ? `${scope.row.locationCode} / ${scope.row.locationName || '-'}` : '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="inboundOrderId" label="入库单ID" width="110" />
+        <el-table-column prop="inboundOrderItemId" label="明细ID" width="100" />
+        <el-table-column prop="renderFormat" label="渲染格式" width="110" />
+        <el-table-column prop="createdAt" label="生成时间" min-width="170" />
+        <el-table-column prop="rawContent" label="码内容" min-width="260" show-overflow-tooltip />
+        <el-table-column label="操作" width="140" fixed="right">
+          <template slot-scope="scope">
+            <el-button type="text" @click="openSavedCargoCode(scope.row)">预览/打印</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <span slot="footer">
+        <el-button @click="fetchCargoCodeRecords">刷新记录</el-button>
+        <el-button @click="cargoCodeRecordsVisible = false">关闭</el-button>
+      </span>
     </el-dialog>
   </div>
 </template>
@@ -170,9 +292,105 @@
 <script>
 import { get, post } from '../api'
 
+const code39Patterns = {
+  '0': 'nnnwwnwnn',
+  '1': 'wnnwnnnnw',
+  '2': 'nnwwnnnnw',
+  '3': 'wnwwnnnnn',
+  '4': 'nnnwwnnnw',
+  '5': 'wnnwwnnnn',
+  '6': 'nnwwwnnnn',
+  '7': 'nnnwnnwnw',
+  '8': 'wnnwnnwnn',
+  '9': 'nnwwnnwnn',
+  A: 'wnnnnwnnw',
+  B: 'nnwnnwnnw',
+  C: 'wnwnnwnnn',
+  D: 'nnnnwwnnw',
+  E: 'wnnnwwnnn',
+  F: 'nnwnwwnnn',
+  G: 'nnnnnwwnw',
+  H: 'wnnnnwwnn',
+  I: 'nnwnnwwnn',
+  J: 'nnnnwwwnn',
+  K: 'wnnnnnnww',
+  L: 'nnwnnnnww',
+  M: 'wnwnnnnwn',
+  N: 'nnnnwnnww',
+  O: 'wnnnwnnwn',
+  P: 'nnwnwnnwn',
+  Q: 'nnnnnnwww',
+  R: 'wnnnnnwwn',
+  S: 'nnwnnnwwn',
+  T: 'nnnnwnwwn',
+  U: 'wwnnnnnnw',
+  V: 'nwwnnnnnw',
+  W: 'wwwnnnnnn',
+  X: 'nwnnwnnnw',
+  Y: 'wwnnwnnnn',
+  Z: 'nwwnwnnnn',
+  '-': 'nwnnnnwnw',
+  '.': 'wwnnnnwnn',
+  ' ': 'nwwnnnwnn',
+  '$': 'nwnwnwnnn',
+  '/': 'nwnwnnnwn',
+  '+': 'nwnnnwnwn',
+  '%': 'nnnwnwnwn',
+  '*': 'nwnnwnwnn'
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function buildCode39Svg(value) {
+  const code = String(value || '').trim().toUpperCase()
+  if (!code) {
+    return ''
+  }
+  const fullCode = `*${code}*`
+  const invalid = fullCode.split('').find(char => !code39Patterns[char])
+  if (invalid) {
+    return ''
+  }
+  const narrow = 2
+  const wide = 5
+  const gap = narrow
+  const margin = 14
+  const barTop = 12
+  const barHeight = 70
+  let x = margin
+  const rects = []
+  fullCode.split('').forEach(char => {
+    code39Patterns[char].split('').forEach((part, index) => {
+      const width = part === 'w' ? wide : narrow
+      if (index % 2 === 0) {
+        rects.push(`<rect x="${x}" y="${barTop}" width="${width}" height="${barHeight}" fill="#111827" />`)
+      }
+      x += width
+    })
+    x += gap
+  })
+  const width = x + margin - gap
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="112" viewBox="0 0 ${width} 112" role="img" aria-label="${escapeHtml(code)}">
+    <rect width="100%" height="100%" fill="#ffffff" />
+    ${rects.join('')}
+    <text x="${width / 2}" y="102" text-anchor="middle" font-family="Consolas, monospace" font-size="14" fill="#111827">${escapeHtml(code)}</text>
+  </svg>`
+}
+
 const createItem = () => ({
   productId: null,
   batchNo: '',
+  cargoCodeType: 'QR_CODE',
+  cargoCode: '',
+  externalPlatform: '',
+  externalCode: '',
   expectedQty: 0,
   actualQty: 0,
   qualifiedQty: 0,
@@ -190,7 +408,15 @@ export default {
       lookups: {},
       dialogVisible: false,
       detailVisible: false,
+      cargoCodeVisible: false,
+      cargoCodeSvg: '',
+      cargoCodeRenderLoading: false,
+      cargoCodeRenderError: '',
+      cargoCodeRecordsVisible: false,
+      cargoCodeRecordsLoading: false,
+      cargoCodeRecords: [],
       currentRow: {},
+      cargoCodeItem: {},
       form: {
         orderNo: '',
         warehouseId: null,
@@ -206,6 +432,34 @@ export default {
   },
   async created() {
     await Promise.all([this.fetchRows(), this.fetchLookups()])
+    if (this.$route.path === '/cargo-code-records') {
+      await this.openCargoCodeRecords()
+    }
+  },
+  computed: {
+    selectedSupplier() {
+      return (this.lookups.suppliers || []).find(item => item.id === this.form.supplierId) || null
+    },
+    selectedSupplierWarehouse() {
+      if (!this.selectedSupplier || !this.selectedSupplier.warehouseId) {
+        return null
+      }
+      return (this.lookups.warehouses || []).find(item => item.id === this.selectedSupplier.warehouseId) || null
+    }
+  },
+  watch: {
+    selectedSupplier(supplier) {
+      if (supplier && supplier.warehouseId) {
+        this.form.warehouseId = supplier.warehouseId
+      }
+      if (supplier && supplier.platformType) {
+        this.form.items.forEach(item => {
+          if (!item.externalPlatform) {
+            item.externalPlatform = supplier.platformType
+          }
+        })
+      }
+    }
   },
   methods: {
     async fetchRows() {
@@ -235,8 +489,119 @@ export default {
       this.currentRow = row
       this.detailVisible = true
     },
+    async openCargoCode(row) {
+      const records = row.cargoCodeRecords || []
+      const latestRecord = records.length ? records[records.length - 1] : null
+      this.cargoCodeItem = {
+        ...row,
+        operationCode: row.operationCode || (latestRecord && latestRecord.operationCode),
+        operationType: row.operationType || (latestRecord && latestRecord.operationType),
+        locationCode: row.locationCode || (latestRecord && latestRecord.locationCode),
+        locationName: row.locationName || (latestRecord && latestRecord.locationName),
+        zoneName: row.zoneName || (latestRecord && latestRecord.zoneName)
+      }
+      this.cargoCodeVisible = true
+      this.cargoCodeSvg = this.savedCargoCodeSvg(this.cargoCodeItem)
+      if (!this.cargoCodeSvg) {
+        await this.renderCargoCode(this.cargoCodeItem)
+      }
+    },
+    openSavedCargoCode(record) {
+      this.cargoCodeItem = {
+        id: record.inboundOrderItemId || record.id,
+        productName: `码记录 #${record.id}`,
+        skuCode: `入库单 ${record.inboundOrderId || '-'}`,
+        batchNo: `明细 ${record.inboundOrderItemId || '-'}`,
+        operationCode: record.operationCode,
+        operationType: record.operationType,
+        locationId: record.locationId,
+        locationCode: record.locationCode,
+        locationName: record.locationName,
+        zoneName: record.zoneName,
+        locationFullName: record.locationCode ? `${record.zoneName ? record.zoneName + ' / ' : ''}${record.locationCode} / ${record.locationName || '-'}` : '',
+        cargoCode: record.cargoCode,
+        cargoCodeType: record.cargoCodeType,
+        cargoCodeContent: record.rawContent,
+        externalPlatform: record.externalPlatform,
+        externalCode: record.externalCode,
+        cargoCodeRecords: [record]
+      }
+      this.cargoCodeSvg = record.svgContent || ''
+      this.cargoCodeRenderError = this.cargoCodeSvg ? '' : '该记录未保存码图形'
+      this.cargoCodeVisible = true
+    },
+    async openCargoCodeRecords() {
+      this.cargoCodeRecordsVisible = true
+      await this.fetchCargoCodeRecords()
+    },
+    async fetchCargoCodeRecords() {
+      try {
+        this.cargoCodeRecordsLoading = true
+        const response = await get('/scan/cargo-code-records', { limit: 300, _ts: Date.now() })
+        this.cargoCodeRecords = response.data || []
+      } catch (error) {
+        this.$message.error(error.message || '加载码记录失败')
+      } finally {
+        this.cargoCodeRecordsLoading = false
+      }
+    },
+    async renderCargoCode(row) {
+      this.cargoCodeSvg = ''
+      this.cargoCodeRenderError = ''
+      const rawContent = this.cargoCodeRawContent(row)
+      if (!rawContent) {
+        this.cargoCodeRenderError = '码内容为空'
+        return
+      }
+      try {
+        this.cargoCodeRenderLoading = true
+        const response = await post('/scan/render-code', {
+          rawContent,
+          scanFormat: row.cargoCodeType || 'QR_CODE',
+          width: row.cargoCodeType === 'BAR_CODE' ? 520 : 240,
+          height: row.cargoCodeType === 'BAR_CODE' ? 140 : 240
+        })
+        this.cargoCodeSvg = response.data && response.data.svg ? response.data.svg : ''
+        if (!this.cargoCodeSvg) {
+          this.cargoCodeRenderError = '码图形生成失败'
+        }
+      } catch (error) {
+        if (row.cargoCodeType === 'BAR_CODE') {
+          this.cargoCodeSvg = buildCode39Svg(row.cargoCode)
+        }
+        this.cargoCodeRenderError = this.cargoCodeSvg ? '' : error.message || '码图形生成失败'
+      } finally {
+        this.cargoCodeRenderLoading = false
+      }
+    },
+    cargoCodeRawContent(row) {
+      if (!row) {
+        return ''
+      }
+      const savedRecord = row.cargoCodeRecords && row.cargoCodeRecords.length ? row.cargoCodeRecords[row.cargoCodeRecords.length - 1] : null
+      if (savedRecord && savedRecord.rawContent) {
+        return savedRecord.rawContent
+      }
+      return row.cargoCodeType === 'BAR_CODE'
+        ? row.cargoCode
+        : row.cargoCodeContent || row.cargoCode
+    },
+    savedCargoCodeSvg(row) {
+      if (!row) {
+        return ''
+      }
+      const records = row.cargoCodeRecords || []
+      if (!records.length) {
+        return row.cargoCodeSvg || ''
+      }
+      return records[records.length - 1].svgContent || row.cargoCodeSvg || ''
+    },
     addItem() {
-      this.form.items.push(createItem())
+      const item = createItem()
+      if (this.selectedSupplier && this.selectedSupplier.platformType) {
+        item.externalPlatform = this.selectedSupplier.platformType
+      }
+      this.form.items.push(item)
     },
     removeItem(index) {
       this.form.items.splice(index, 1)
@@ -246,6 +611,9 @@ export default {
     },
     async submit() {
       try {
+        if (this.selectedSupplier && this.selectedSupplier.warehouseId) {
+          this.form.warehouseId = this.selectedSupplier.warehouseId
+        }
         await post('/inbounds', this.form)
         this.$message.success('创建成功')
         this.dialogVisible = false
@@ -292,7 +660,167 @@ export default {
       if (status === 'PUTAWAY_COMPLETED') return 'success'
       if (status === 'RECEIVED') return 'warning'
       return 'info'
+    },
+    allItemsScanConfirmed(row) {
+      const items = row && row.items ? row.items : []
+      return items.length > 0 && items.every(item => item.putawayScanConfirmed)
+    },
+    platformText(platform) {
+      const map = {
+        TAOBAO: '淘宝',
+        TMALL: '天猫',
+        PINDUODUO: '拼多多',
+        MEITUAN: '美团',
+        TAOBAO_FLASH: '淘宝闪购',
+        OTHER: '其他'
+      }
+      return map[platform] || platform || '-'
+    },
+    codeTypeText(type) {
+      return { QR_CODE: '二维码', BAR_CODE: '条形码' }[type] || type || '-'
+    },
+    resolveLocationText(locationId) {
+      const location = (this.lookups.locations || []).find(item => item.id === locationId)
+      if (!location) {
+        return locationId ? `库位ID ${locationId}` : '-'
+      }
+      return `${location.locationCode} / ${location.locationName}`
+    },
+    async copyText(value) {
+      if (!value) {
+        return
+      }
+      try {
+        await navigator.clipboard.writeText(value)
+        this.$message.success('已复制')
+      } catch (error) {
+        this.$message.error('复制失败，请手动复制')
+      }
+    },
+    printCargoCodeLabel() {
+      if (!this.cargoCodeItem.id) {
+        return
+      }
+      const html = this.$refs.cargoCodeLabel ? this.$refs.cargoCodeLabel.outerHTML : ''
+      const frame = document.createElement('iframe')
+      frame.style.position = 'fixed'
+      frame.style.right = '0'
+      frame.style.bottom = '0'
+      frame.style.width = '0'
+      frame.style.height = '0'
+      frame.style.border = '0'
+      document.body.appendChild(frame)
+      const doc = frame.contentWindow.document
+      doc.open()
+      doc.write(`
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>${escapeHtml(this.cargoCodeItem.cargoCode)}</title>
+            <style>
+              @page { size: 78mm 52mm; margin: 4mm; }
+              * { box-sizing: border-box; }
+              body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: #111827; }
+              .cargo-code-label { width: 70mm; min-height: 44mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; }
+              .cargo-code-title { max-width: 100%; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+              .cargo-code-meta { max-width: 100%; font-size: 10px; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+              .cargo-code-value { font-size: 10px; font-family: Consolas, monospace; letter-spacing: 0.06em; }
+              .code-svg-box { max-width: 66mm; max-height: 28mm; overflow: hidden; display: flex; justify-content: center; }
+              .code-svg-box svg { max-width: 66mm; max-height: 28mm; width: auto; height: auto; }
+              .code-render-placeholder { width: 62mm; min-height: 22mm; display: flex; align-items: center; justify-content: center; border: 1px solid #d8dee6; font-size: 9px; color: #64748b; }
+            </style>
+          </head>
+          <body>${html}</body>
+        </html>
+      `)
+      doc.close()
+      setTimeout(() => {
+        frame.contentWindow.focus()
+        frame.contentWindow.print()
+        setTimeout(() => document.body.removeChild(frame), 500)
+      }, 100)
     }
   }
 }
 </script>
+
+<style scoped>
+.form-tip {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+  margin-top: 6px;
+}
+
+.cargo-code-preview {
+  display: flex;
+  justify-content: center;
+}
+
+.cargo-code-label {
+  width: 100%;
+  min-height: 280px;
+  padding: 18px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cargo-code-title {
+  max-width: 100%;
+  color: #111827;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cargo-code-meta,
+.cargo-code-value {
+  max-width: 100%;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cargo-code-value {
+  color: #111827;
+  font-family: Consolas, monospace;
+  letter-spacing: 0.06em;
+}
+
+.code-svg-box {
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+}
+
+.code-svg-box ::v-deep svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.code-render-placeholder {
+  width: 100%;
+  min-height: 160px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+</style>

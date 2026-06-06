@@ -44,6 +44,11 @@ const routes = [
       { path: 'master/products', component: ResourcePage, meta: { title: '商品管理', resource: 'products' } },
       { path: 'inbounds', component: Inbounds, meta: { title: '入库管理' } },
       {
+        path: 'cargo-code-records',
+        component: Inbounds,
+        meta: { title: '码记录打印', accessFallback: ['/inbounds'] }
+      },
+      {
         path: 'station-inbound',
         component: StationInbound,
         meta: { title: '驿站/柜机入库', accessFallback: ['/inbounds'] }

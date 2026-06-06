@@ -2,6 +2,7 @@ package com.wms.controller;
 
 import com.wms.common.ApiResponse;
 import com.wms.dto.OutboundOrderRequest;
+import com.wms.dto.OutboundScanRequest;
 import com.wms.service.OutboundService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,5 +43,10 @@ public class OutboundController {
     @PostMapping("/{id}/ship")
     public ApiResponse<?> ship(@PathVariable Long id) {
         return ApiResponse.ok("发运完成", outboundService.ship(id));
+    }
+
+    @PostMapping("/{id}/scan-ship")
+    public ApiResponse<?> scanShip(@PathVariable Long id, @RequestBody OutboundScanRequest request) {
+        return ApiResponse.ok("扫码确认成功", outboundService.scanShip(id, request));
     }
 }

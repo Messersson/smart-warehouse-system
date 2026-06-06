@@ -34,6 +34,10 @@
           <i class="el-icon-download"></i>
           <span slot="title">入库管理</span>
         </el-menu-item>
+        <el-menu-item v-if="canAccess('/cargo-code-records', ['/inbounds'])" index="/cargo-code-records">
+          <i class="el-icon-printer"></i>
+          <span slot="title">码记录打印</span>
+        </el-menu-item>
         <el-menu-item v-if="canAccess('/station-inbound', ['/inbounds'])" index="/station-inbound">
           <i class="el-icon-office-building"></i>
           <span slot="title">驿站入库</span>
