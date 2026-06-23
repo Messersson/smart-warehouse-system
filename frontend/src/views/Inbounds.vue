@@ -50,9 +50,12 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="所属仓库">
-              <el-select v-model="form.warehouseId" filterable style="width: 100%" :disabled="!!selectedSupplierWarehouse">
-                <el-option v-for="item in lookups.warehouses || []" :key="item.id" :label="item.warehouseName" :value="item.id" />
-              </el-select>
+              <div class="quick-select">
+                <el-select v-model="form.warehouseId" filterable style="width: 100%" :disabled="!!selectedSupplierWarehouse">
+                  <el-option v-for="item in lookups.warehouses || []" :key="item.id" :label="item.warehouseName" :value="item.id" />
+                </el-select>
+                <el-button icon="el-icon-plus" :disabled="!!selectedSupplierWarehouse" @click="openQuickCreate('warehouses')" />
+              </div>
               <div v-if="selectedSupplierWarehouse" class="form-tip">
                 已按供应商专属仓库自动分配：{{ selectedSupplierWarehouse.warehouseName }}
               </div>
@@ -60,16 +63,22 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="供应商">
-              <el-select v-model="form.supplierId" filterable style="width: 100%">
-                <el-option v-for="item in lookups.suppliers || []" :key="item.id" :label="item.supplierName" :value="item.id" />
-              </el-select>
+              <div class="quick-select">
+                <el-select v-model="form.supplierId" filterable style="width: 100%">
+                  <el-option v-for="item in lookups.suppliers || []" :key="item.id" :label="item.supplierName" :value="item.id" />
+                </el-select>
+                <el-button icon="el-icon-plus" @click="openQuickCreate('suppliers')" />
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="货主">
-              <el-select v-model="form.ownerId" filterable style="width: 100%">
-                <el-option v-for="item in lookups.owners || []" :key="item.id" :label="item.ownerName" :value="item.id" />
-              </el-select>
+              <div class="quick-select">
+                <el-select v-model="form.ownerId" filterable style="width: 100%">
+                  <el-option v-for="item in lookups.owners || []" :key="item.id" :label="item.ownerName" :value="item.id" />
+                </el-select>
+                <el-button icon="el-icon-plus" @click="openQuickCreate('owners')" />
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -100,9 +109,12 @@
         <el-table :data="form.items" border size="small">
           <el-table-column label="商品" min-width="220">
             <template slot-scope="scope">
-              <el-select v-model="scope.row.productId" filterable style="width: 100%">
-                <el-option v-for="item in lookups.products || []" :key="item.id" :label="`${item.skuCode} / ${item.productName}`" :value="item.id" />
-              </el-select>
+              <div class="quick-select">
+                <el-select v-model="scope.row.productId" filterable style="width: 100%">
+                  <el-option v-for="item in lookups.products || []" :key="item.id" :label="`${item.skuCode} / ${item.productName}`" :value="item.id" />
+                </el-select>
+                <el-button icon="el-icon-plus" @click="openQuickCreate('products', scope.row)" />
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="批次号" min-width="160">
@@ -157,9 +169,12 @@
           </el-table-column>
           <el-table-column label="上架库位" min-width="180">
             <template slot-scope="scope">
-              <el-select v-model="scope.row.locationId" filterable style="width: 100%">
-                <el-option v-for="item in lookups.locations || []" :key="item.id" :label="item.locationCode" :value="item.id" />
-              </el-select>
+              <div class="quick-select">
+                <el-select v-model="scope.row.locationId" filterable style="width: 100%">
+                  <el-option v-for="item in filteredLocations" :key="item.id" :label="item.locationCode" :value="item.id" />
+                </el-select>
+                <el-button icon="el-icon-plus" :disabled="!form.warehouseId" @click="openQuickCreate('locations', scope.row)" />
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="生产日期" width="150">
@@ -185,6 +200,13 @@
         <el-button type="primary" @click="submit">保存</el-button>
       </span>
     </el-dialog>
+
+    <quick-create-dialog
+      v-model="quickCreateVisible"
+      :resource="quickCreateResource"
+      :context="quickCreateContext"
+      @created="handleQuickCreated"
+    />
 
     <el-dialog title="入库单明细" :visible.sync="detailVisible" width="920px">
       <el-descriptions :column="3" border v-if="currentRow.id">
@@ -291,6 +313,7 @@
 
 <script>
 import { get, post } from '../api'
+import QuickCreateDialog from '../components/QuickCreateDialog.vue'
 
 const code39Patterns = {
   '0': 'nnnwwnwnn',
@@ -402,6 +425,9 @@ const createItem = () => ({
 
 export default {
   name: 'InboundsPage',
+  components: {
+    QuickCreateDialog
+  },
   data() {
     return {
       rows: [],
@@ -415,6 +441,9 @@ export default {
       cargoCodeRecordsVisible: false,
       cargoCodeRecordsLoading: false,
       cargoCodeRecords: [],
+      quickCreateVisible: false,
+      quickCreateResource: '',
+      quickCreateTarget: null,
       currentRow: {},
       cargoCodeItem: {},
       form: {
@@ -445,6 +474,18 @@ export default {
         return null
       }
       return (this.lookups.warehouses || []).find(item => item.id === this.selectedSupplier.warehouseId) || null
+    },
+    filteredLocations() {
+      const locations = this.lookups.locations || []
+      if (!this.form.warehouseId) {
+        return locations
+      }
+      return locations.filter(item => item.warehouseId === this.form.warehouseId)
+    },
+    quickCreateContext() {
+      return {
+        warehouseId: this.form.warehouseId
+      }
     }
   },
   watch: {
@@ -488,6 +529,27 @@ export default {
     openDetail(row) {
       this.currentRow = row
       this.detailVisible = true
+    },
+    openQuickCreate(resource, target = null) {
+      this.quickCreateResource = resource
+      this.quickCreateTarget = target
+      this.quickCreateVisible = true
+    },
+    async handleQuickCreated({ resource, item }) {
+      await this.fetchLookups()
+      const created = item || {}
+      if (resource === 'warehouses') {
+        this.form.warehouseId = created.id
+      } else if (resource === 'suppliers') {
+        this.form.supplierId = created.id
+      } else if (resource === 'owners') {
+        this.form.ownerId = created.id
+      } else if (resource === 'products' && this.quickCreateTarget) {
+        this.quickCreateTarget.productId = created.id
+      } else if (resource === 'locations' && this.quickCreateTarget) {
+        this.quickCreateTarget.locationId = created.id
+      }
+      this.$message.success('新增成功，已自动选中')
     },
     async openCargoCode(row) {
       const records = row.cargoCodeRecords || []
@@ -751,6 +813,20 @@ export default {
   font-size: 12px;
   line-height: 18px;
   margin-top: 6px;
+}
+
+.quick-select {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  align-items: center;
+}
+
+.quick-select .el-button {
+  width: 34px;
+  min-width: 34px;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .cargo-code-preview {

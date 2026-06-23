@@ -372,6 +372,27 @@ fun WarehouseScannerApp(
         return updated + mapOf("entityType" to "INBOUND_ORDER")
     }
 
+    suspend fun confirmInboundPutawayScan(code: String, updateScanResult: Boolean = true): JsonMap? {
+        val trimmed = code.trim()
+        if (trimmed.isBlank()) {
+            showMessage("请先扫描货物标签")
+            return null
+        }
+
+        val updated = api.scanInboundPutaway(
+            rawContent = trimmed,
+            operatorName = session.operatorName()
+        ) + mapOf("entityType" to "INBOUND_ORDER")
+        if (updateScanResult) {
+            scanResult = updated
+        }
+        if (selectedInbound?.long("id") == updated.long("id")) {
+            selectedInbound = updated
+        }
+        showMessage(updated.string("message").ifBlank { "货物标签已确认，可执行上架" })
+        return updated
+    }
+
     fun runInboundAction(action: InboundAction, target: JsonMap? = scanResult) {
         val result = target ?: return
         scope.launch {
@@ -577,15 +598,26 @@ fun WarehouseScannerApp(
                 operatorName = session.operatorName()
             )
             val lookup = scanSave["lookupData"].asMap()
-            if (lookup.isEmpty() || lookup.string("entityType") != "INBOUND_ORDER") {
+            if (lookup.isEmpty()) {
                 showMessage("扫码结果不是入库单")
                 return
             }
-            selectedInbound = api.inboundDetail(lookup.long("id")) + mapOf("entityType" to "INBOUND_ORDER")
+            selectedInbound = when (lookup.string("entityType")) {
+                "INBOUND_ORDER" -> api.inboundDetail(lookup.long("id")) + mapOf("entityType" to "INBOUND_ORDER")
+                "INBOUND_ORDER_ITEM" -> confirmInboundPutawayScan(code, updateScanResult = false)
+                else -> {
+                    showMessage("扫码结果不是入库单")
+                    return
+                }
+            }
             if (inboundOrders.isEmpty()) {
                 inboundOrders = api.inbounds()
+            } else if (lookup.string("entityType") == "INBOUND_ORDER_ITEM") {
+                loadInbounds(selectFirst = false)
             }
-            showMessage("已打开入库单")
+            if (lookup.string("entityType") == "INBOUND_ORDER") {
+                showMessage("已打开入库单")
+            }
         } catch (exception: ApiException) {
             showMessage(exception.message)
         } finally {
@@ -825,7 +857,20 @@ fun WarehouseScannerApp(
                         },
                         onInboundAction = ::runInboundAction,
                         onOutboundAction = ::runOutboundAction,
-                        onOutboundScanItem = ::runScanResultOutboundItem
+                        onOutboundScanItem = ::runScanResultOutboundItem,
+                        onInboundPutawayScan = { code ->
+                            scope.launch {
+                                scanLoading = true
+                                try {
+                                    confirmInboundPutawayScan(code)
+                                    loadInbounds(selectFirst = false)
+                                } catch (exception: ApiException) {
+                                    showMessage(exception.message)
+                                } finally {
+                                    scanLoading = false
+                                }
+                            }
+                        }
                     )
                     WorkTab.Inbound -> InboundWorkspace(
                         loading = inboundLoading,
@@ -1343,7 +1388,8 @@ private fun ScanWorkspace(
     onClearHistory: () -> Unit,
     onInboundAction: (InboundAction) -> Unit,
     onOutboundAction: (OutboundAction) -> Unit,
-    onOutboundScanItem: (String) -> Unit
+    onOutboundScanItem: (String) -> Unit,
+    onInboundPutawayScan: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -1380,6 +1426,7 @@ private fun ScanWorkspace(
                 loading = loading,
                 onScanCodeChange = onCodeChange,
                 onOutboundScanItem = onOutboundScanItem,
+                onInboundPutawayScan = onInboundPutawayScan,
                 onInboundAction = onInboundAction,
                 onOutboundAction = onOutboundAction
             )
@@ -1628,6 +1675,7 @@ private fun LookupResultCard(
     loading: Boolean,
     onScanCodeChange: (String) -> Unit,
     onOutboundScanItem: (String) -> Unit,
+    onInboundPutawayScan: (String) -> Unit,
     onInboundAction: (InboundAction) -> Unit,
     onOutboundAction: (OutboundAction) -> Unit
 ) {
@@ -1660,6 +1708,16 @@ private fun LookupResultCard(
 
         when (entityType) {
             "INBOUND_ORDER" -> InboundActions(result, onInboundAction)
+            "INBOUND_ORDER_ITEM" -> {
+                SectionTitle("入库贴码")
+                Button(
+                    enabled = !loading && !result.bool("putawayScanConfirmed"),
+                    onClick = { onInboundPutawayScan(scanCode.ifBlank { primaryCode(result) }) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (result.bool("putawayScanConfirmed")) "已确认" else "确认入库标签")
+                }
+            }
             "OUTBOUND_ORDER" -> {
                 SectionTitle("扫码出库")
                 OutlinedTextField(

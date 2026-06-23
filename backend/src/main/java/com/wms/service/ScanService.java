@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wms.common.BusinessException;
 import com.wms.dto.ScanRecordRequest;
+import com.wms.entity.CargoCodeRecord;
 import com.wms.entity.InboundOrderItem;
 import com.wms.entity.InboundOrder;
 import com.wms.entity.Location;
@@ -11,6 +12,7 @@ import com.wms.entity.OutboundOrder;
 import com.wms.entity.Product;
 import com.wms.entity.ScanRecord;
 import com.wms.entity.Warehouse;
+import com.wms.repository.CargoCodeRecordRepository;
 import com.wms.repository.InboundOrderRepository;
 import com.wms.repository.InboundOrderItemRepository;
 import com.wms.repository.LocationRepository;
@@ -26,9 +28,12 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,39 +46,63 @@ public class ScanService {
     private static final List<String> CODE_KEYS = List.of(
             "cargoCode",
             "externalCode",
+            "externalNo",
+            "externalOrderNo",
+            "merchantCode",
+            "merchantOrderNo",
             "code",
             "barcode",
             "barCode",
+            "bar_code",
             "sku",
             "skuCode",
+            "sku_code",
             "productCode",
+            "product_code",
             "orderNo",
+            "order_no",
             "orderId",
+            "order_id",
             "tradeNo",
             "tradeId",
             "tid",
             "packageId",
+            "packageNo",
+            "packageCode",
+            "parcelNo",
+            "parcelCode",
             "waybillCode",
+            "waybillNo",
+            "mailNo",
+            "mailno",
+            "expressNo",
+            "expressCode",
             "logisticsCode",
             "pickupCode",
             "scanCode",
             "logisticsNo",
+            "trackingNo",
+            "trackingNumber",
             "locationCode",
             "pddOrderSn",
             "pddGoodsId",
             "mtOrderId",
+            "meituanOrderId",
+            "wmOrderViewId",
             "wmOrderId",
             "tbOrderId",
             "tmallOrderId",
             "flashOrderId"
     );
     private static final Pattern KEY_VALUE_PATTERN = Pattern.compile(
-            "(?i)(cargoCode|externalCode|code|barcode|barCode|sku|skuCode|productCode|orderNo|orderId|tradeNo|tradeId|tid|packageId|waybillCode|logisticsCode|pickupCode|scanCode|logisticsNo|locationCode|pddOrderSn|pddGoodsId|mtOrderId|wmOrderId|tbOrderId|tmallOrderId|flashOrderId)\\s*[:=]\\s*([^\\s,;|]+)"
+            "(?i)(cargoCode|externalCode|externalNo|externalOrderNo|merchantCode|merchantOrderNo|code|barcode|barCode|bar_code|sku|skuCode|sku_code|productCode|product_code|orderNo|order_no|orderId|order_id|tradeNo|tradeId|tid|packageId|packageNo|packageCode|parcelNo|parcelCode|waybillCode|waybillNo|mailNo|mailno|expressNo|expressCode|logisticsCode|pickupCode|scanCode|logisticsNo|trackingNo|trackingNumber|locationCode|pddOrderSn|pddGoodsId|mtOrderId|meituanOrderId|wmOrderViewId|wmOrderId|tbOrderId|tmallOrderId|flashOrderId|货物码|外部码|商家码|订单号|平台单号|快递单号|运单号|物流单号|包裹号|取件码|商品条码|条形码|商品编码|库位编码)\\s*[:=：]\\s*([^\\s,;|，；]+)"
     );
+    private static final Pattern EXPRESS_LIKE_PATTERN = Pattern.compile("\\b([A-Z]{1,6}\\d{6,24}|\\d{10,24})\\b");
     private static final Pattern GS1_GTIN_PATTERN = Pattern.compile("\\(01\\)(\\d{14})");
 
     private final InboundOrderRepository inboundOrderRepository;
     private final InboundOrderItemRepository inboundOrderItemRepository;
+    private final CargoCodeRecordRepository cargoCodeRecordRepository;
     private final OutboundOrderRepository outboundOrderRepository;
     private final LocationRepository locationRepository;
     private final WarehouseRepository warehouseRepository;
@@ -84,7 +113,7 @@ public class ScanService {
 
     public Map<String, Object> lookup(String code) {
         ParsedScan parsedScan = parseScanContent(code);
-        return lookupParsedCode(parsedScan.parsedCode());
+        return lookupParsedScan(parsedScan);
     }
 
     public List<Map<String, Object>> listRecords(Integer limit) {
@@ -102,7 +131,7 @@ public class ScanService {
         Map<String, Object> lookupData = null;
         BusinessException lookupException = null;
         try {
-            lookupData = lookupParsedCode(parsedScan.parsedCode());
+            lookupData = lookupParsedScan(parsedScan);
         } catch (BusinessException exception) {
             lookupException = exception;
         }
@@ -137,6 +166,24 @@ public class ScanService {
         return data;
     }
 
+    private Map<String, Object> lookupParsedScan(ParsedScan parsedScan) {
+        BusinessException lastException = null;
+        for (String candidate : parsedScan.candidateCodes()) {
+            try {
+                Map<String, Object> data = lookupParsedCode(candidate);
+                data.put("matchedCode", candidate);
+                data.put("candidateCodes", parsedScan.candidateCodes());
+                return data;
+            } catch (BusinessException exception) {
+                lastException = exception;
+            }
+        }
+        if (lastException != null) {
+            throw lastException;
+        }
+        throw new BusinessException("扫码编码不能为空");
+    }
+
     private Map<String, Object> lookupParsedCode(String code) {
         if (code == null || code.isBlank()) {
             throw new BusinessException("扫码编码不能为空");
@@ -149,20 +196,28 @@ public class ScanService {
         Optional<InboundOrder> inbound = inboundOrderRepository.findFirstByOrderNoOrPickupCodeOrScanCodeOrderByIdDesc(lookupCode, lookupCode, lookupCode);
         if (inbound.isPresent()) {
             InboundOrder order = inbound.get();
-            Map<String, Object> data = new HashMap<>();
-            data.put("entityType", "INBOUND_ORDER");
-            data.put("id", order.getId());
-            data.put("code", order.getOrderNo());
-            data.put("orderNo", order.getOrderNo());
-            data.put("warehouseId", order.getWarehouseId());
-            data.put("warehouseName", warehouseMap.get(order.getWarehouseId()) == null ? null : warehouseMap.get(order.getWarehouseId()).getWarehouseName());
-            data.put("status", order.getStatus());
-            data.put("pickupStatus", order.getPickupStatus());
-            data.put("pickupCode", order.getPickupCode());
-            data.put("scanCode", order.getScanCode());
-            data.put("receiverName", order.getReceiverName());
-            data.put("receiverPhone", order.getReceiverPhone());
-            data.put("pickupDueAt", order.getPickupDueAt());
+            return inboundOrderLookupData(order, warehouseMap, order.getScanCode());
+        }
+
+        Optional<CargoCodeRecord> cargoCodeRecord = cargoCodeRecordRepository.findFirstByCargoCodeOrderByIdDesc(lookupCode)
+                .or(() -> cargoCodeRecordRepository.findFirstByRawContentOrderByIdDesc(lookupCode));
+        if (cargoCodeRecord.isPresent()) {
+            CargoCodeRecord record = cargoCodeRecord.get();
+            InboundOrder order = inboundOrderRepository.findById(record.getInboundOrderId())
+                    .orElseThrow(() -> new BusinessException("未找到货物码绑定的入库单: " + lookupCode));
+            InboundOrderItem orderItem = inboundOrderItemRepository.findById(record.getInboundOrderItemId())
+                    .orElseThrow(() -> new BusinessException("未找到货物码绑定的入库明细: " + lookupCode));
+            Map<String, Object> data = inboundOrderItemLookupData(orderItem, order, warehouseMap);
+            data.put("cargoCodeRecordId", record.getId());
+            data.put("cargoCode", record.getCargoCode());
+            data.put("cargoCodeType", record.getCargoCodeType());
+            data.put("cargoCodeContent", record.getRawContent());
+            data.put("inboundOrderItemId", record.getInboundOrderItemId());
+            data.put("productId", record.getProductId());
+            data.put("locationId", record.getLocationId());
+            data.put("locationCode", record.getLocationCode());
+            data.put("locationName", record.getLocationName());
+            data.put("zoneName", record.getZoneName());
             return data;
         }
 
@@ -172,45 +227,7 @@ public class ScanService {
             InboundOrderItem orderItem = inboundItem.get();
             InboundOrder order = inboundOrderRepository.findById(orderItem.getOrderId())
                     .orElseThrow(() -> new BusinessException("未找到入库单明细所属入库单: " + lookupCode));
-            Map<String, Object> data = new HashMap<>();
-            data.put("entityType", "INBOUND_ORDER_ITEM");
-            data.put("id", orderItem.getId());
-            data.put("code", orderItem.getCargoCode());
-            data.put("cargoCode", orderItem.getCargoCode());
-            data.put("cargoCodeType", orderItem.getCargoCodeType());
-            data.put("cargoCodeContent", orderItem.getCargoCodeContent());
-            data.put("externalPlatform", orderItem.getExternalPlatform());
-            data.put("externalCode", orderItem.getExternalCode());
-            data.put("orderId", order.getId());
-            data.put("orderNo", order.getOrderNo());
-            data.put("warehouseId", order.getWarehouseId());
-            data.put("warehouseName", warehouseMap.get(order.getWarehouseId()) == null ? null : warehouseMap.get(order.getWarehouseId()).getWarehouseName());
-            data.put("status", order.getStatus());
-            data.put("pickupStatus", order.getPickupStatus());
-            data.put("supplierId", order.getSupplierId());
-            data.put("productId", orderItem.getProductId());
-            data.put("skuCode", orderItem.getSkuCode());
-            data.put("productName", orderItem.getProductName());
-            data.put("batchNo", orderItem.getBatchNo());
-            data.put("expectedQty", orderItem.getExpectedQty());
-            data.put("actualQty", orderItem.getActualQty());
-            data.put("qualifiedQty", orderItem.getQualifiedQty());
-            data.put("locationId", orderItem.getLocationId());
-            locationRepository.findById(Optional.ofNullable(orderItem.getLocationId()).orElse(-1L)).ifPresent(location -> {
-                data.put("locationCode", location.getLocationCode());
-                data.put("locationName", location.getLocationName());
-                data.put("zoneName", location.getZoneName());
-                data.put("aisleNo", location.getAisleNo());
-                data.put("shelfNo", location.getShelfNo());
-                data.put("layerNo", location.getLayerNo());
-                data.put("binNo", location.getBinNo());
-                data.put("locationFullName", locationFullName(location));
-            });
-            data.put("putawayScanConfirmed", Boolean.TRUE.equals(orderItem.getPutawayScanConfirmed()));
-            data.put("putawayScanConfirmedAt", orderItem.getPutawayScanConfirmedAt());
-            data.put("putawayScanOperator", orderItem.getPutawayScanOperator());
-            data.put("putawayScanRecordId", orderItem.getPutawayScanRecordId());
-            return data;
+            return inboundOrderItemLookupData(orderItem, order, warehouseMap);
         }
 
         Optional<OutboundOrder> outbound = outboundOrderRepository.findFirstByOrderNoOrLogisticsNoOrderByIdDesc(lookupCode, lookupCode);
@@ -268,6 +285,67 @@ public class ScanService {
         throw new BusinessException("未找到对应的扫码对象: " + lookupCode);
     }
 
+    private Map<String, Object> inboundOrderLookupData(InboundOrder order, Map<Long, Warehouse> warehouseMap, String scanCode) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("entityType", "INBOUND_ORDER");
+        data.put("id", order.getId());
+        data.put("code", order.getOrderNo());
+        data.put("orderNo", order.getOrderNo());
+        data.put("warehouseId", order.getWarehouseId());
+        data.put("warehouseName", warehouseMap.get(order.getWarehouseId()) == null ? null : warehouseMap.get(order.getWarehouseId()).getWarehouseName());
+        data.put("status", order.getStatus());
+        data.put("pickupStatus", order.getPickupStatus());
+        data.put("pickupCode", order.getPickupCode());
+        data.put("scanCode", scanCode);
+        data.put("orderScanCode", order.getScanCode());
+        data.put("receiverName", order.getReceiverName());
+        data.put("receiverPhone", order.getReceiverPhone());
+        data.put("pickupDueAt", order.getPickupDueAt());
+        return data;
+    }
+
+    private Map<String, Object> inboundOrderItemLookupData(InboundOrderItem orderItem, InboundOrder order, Map<Long, Warehouse> warehouseMap) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("entityType", "INBOUND_ORDER_ITEM");
+        data.put("id", orderItem.getId());
+        data.put("code", orderItem.getCargoCode());
+        data.put("cargoCode", orderItem.getCargoCode());
+        data.put("cargoCodeType", orderItem.getCargoCodeType());
+        data.put("cargoCodeContent", orderItem.getCargoCodeContent());
+        data.put("externalPlatform", orderItem.getExternalPlatform());
+        data.put("externalCode", orderItem.getExternalCode());
+        data.put("orderId", order.getId());
+        data.put("orderNo", order.getOrderNo());
+        data.put("warehouseId", order.getWarehouseId());
+        data.put("warehouseName", warehouseMap.get(order.getWarehouseId()) == null ? null : warehouseMap.get(order.getWarehouseId()).getWarehouseName());
+        data.put("status", order.getStatus());
+        data.put("pickupStatus", order.getPickupStatus());
+        data.put("supplierId", order.getSupplierId());
+        data.put("productId", orderItem.getProductId());
+        data.put("skuCode", orderItem.getSkuCode());
+        data.put("productName", orderItem.getProductName());
+        data.put("batchNo", orderItem.getBatchNo());
+        data.put("expectedQty", orderItem.getExpectedQty());
+        data.put("actualQty", orderItem.getActualQty());
+        data.put("qualifiedQty", orderItem.getQualifiedQty());
+        data.put("locationId", orderItem.getLocationId());
+        locationRepository.findById(Optional.ofNullable(orderItem.getLocationId()).orElse(-1L)).ifPresent(location -> {
+            data.put("locationCode", location.getLocationCode());
+            data.put("locationName", location.getLocationName());
+            data.put("zoneName", location.getZoneName());
+            data.put("aisleNo", location.getAisleNo());
+            data.put("shelfNo", location.getShelfNo());
+            data.put("layerNo", location.getLayerNo());
+            data.put("binNo", location.getBinNo());
+            data.put("locationFullName", locationFullName(location));
+        });
+        data.put("putawayScanConfirmed", Boolean.TRUE.equals(orderItem.getPutawayScanConfirmed()));
+        data.put("putawayScanConfirmedAt", orderItem.getPutawayScanConfirmedAt());
+        data.put("putawayScanOperator", orderItem.getPutawayScanOperator());
+        data.put("putawayScanRecordId", orderItem.getPutawayScanRecordId());
+        return data;
+    }
+
     private ParsedScan parseScanContent(String rawContent) {
         String raw = rawContent == null ? "" : rawContent.trim();
         if (raw.isBlank()) {
@@ -291,10 +369,10 @@ public class ScanService {
 
         Matcher gs1Matcher = GS1_GTIN_PATTERN.matcher(raw);
         if (gs1Matcher.find()) {
-            return new ParsedScan(raw, gs1Matcher.group(1), "GS1_AI", "GTIN", detectMerchantPlatform(raw));
+            return parsed(raw, "GS1_AI", "GTIN", detectMerchantPlatform(raw), List.of(gs1Matcher.group(1)));
         }
 
-        return new ParsedScan(raw, raw, "PLAIN_TEXT", "RAW", detectMerchantPlatform(raw));
+        return parsed(raw, "PLAIN_TEXT", "RAW", detectMerchantPlatform(raw), candidateCodes(raw));
     }
 
     private Optional<ParsedScan> parseJson(String raw) {
@@ -305,8 +383,9 @@ public class ScanService {
             Map<String, Object> payload = objectMapper.readValue(raw, new TypeReference<>() {
             });
             String platform = detectMerchantPlatform(payload, raw);
-            return findCodeInMap(payload)
-                    .map(match -> new ParsedScan(raw, match.value(), "JSON", normalizeKey(match.key()), platform));
+            List<CodeMatch> matches = findCodesInMap(payload);
+            return matches.stream().findFirst()
+                    .map(match -> parsed(raw, "JSON", normalizeKey(match.key()), platform, matches.stream().map(CodeMatch::value).toList()));
         } catch (Exception ignored) {
             return Optional.empty();
         }
@@ -319,10 +398,12 @@ public class ScanService {
         try {
             URI uri = URI.create(raw);
             Map<String, String> query = splitQuery(uri.getRawQuery());
-            Optional<CodeMatch> queryMatch = findCodeInStringMap(query);
-            if (queryMatch.isPresent()) {
-                CodeMatch match = queryMatch.get();
-                return Optional.of(new ParsedScan(raw, match.value(), "URI", normalizeKey(match.key()), detectMerchantPlatform(raw)));
+            List<CodeMatch> queryMatches = findCodesInStringMap(query);
+            if (!queryMatches.isEmpty()) {
+                CodeMatch match = queryMatches.get(0);
+                List<String> candidates = new ArrayList<>(queryMatches.stream().map(CodeMatch::value).toList());
+                candidates.addAll(candidateCodes(raw));
+                return Optional.of(parsed(raw, "URI", normalizeKey(match.key()), detectMerchantPlatform(raw), candidates));
             }
 
             String path = uri.getPath();
@@ -331,7 +412,10 @@ public class ScanService {
                 for (int i = parts.length - 1; i >= 0; i--) {
                     String part = urlDecode(parts[i]);
                     if (!part.isBlank()) {
-                        return Optional.of(new ParsedScan(raw, part, "URI", "PATH", detectMerchantPlatform(raw)));
+                        List<String> candidates = new ArrayList<>();
+                        candidates.add(part);
+                        candidates.addAll(candidateCodes(raw));
+                        return Optional.of(parsed(raw, "URI", "PATH", detectMerchantPlatform(raw), candidates));
                     }
                 }
             }
@@ -346,31 +430,50 @@ public class ScanService {
         if (!matcher.find()) {
             return Optional.empty();
         }
-        return Optional.of(new ParsedScan(raw, matcher.group(2).trim(), "KEY_VALUE", normalizeKey(matcher.group(1)), detectMerchantPlatform(raw)));
+        List<CodeMatch> matches = new ArrayList<>();
+        do {
+            matches.add(new CodeMatch(matcher.group(1), matcher.group(2).trim()));
+        } while (matcher.find());
+        CodeMatch first = matches.get(0);
+        return Optional.of(parsed(raw, "KEY_VALUE", normalizeKey(first.key()), detectMerchantPlatform(raw), matches.stream().map(CodeMatch::value).toList()));
     }
 
-    private Optional<CodeMatch> findCodeInMap(Map<String, Object> payload) {
-        return CODE_KEYS.stream()
+    private List<CodeMatch> findCodesInMap(Map<String, Object> payload) {
+        List<CodeMatch> matches = CODE_KEYS.stream()
                 .map(key -> findValueIgnoreCase(payload, key).map(value -> new CodeMatch(key, value)))
                 .filter(Optional::isPresent)
                 .map(Optional::get)
-                .findFirst()
-                .or(() -> payload.values().stream()
-                        .filter(Map.class::isInstance)
-                        .map(value -> (Map<?, ?>) value)
-                        .map(this::stringKeyMap)
-                        .map(this::findCodeInMap)
-                        .filter(Optional::isPresent)
-                        .map(Optional::get)
-                        .findFirst());
+                .toList();
+        List<CodeMatch> nested = payload.values().stream()
+                .filter(Map.class::isInstance)
+                .map(value -> (Map<?, ?>) value)
+                .map(this::stringKeyMap)
+                .flatMap(map -> findCodesInMap(map).stream())
+                .toList();
+        List<CodeMatch> all = new ArrayList<>();
+        all.addAll(matches);
+        all.addAll(nested);
+        return dedupeMatches(all);
     }
 
-    private Optional<CodeMatch> findCodeInStringMap(Map<String, String> payload) {
-        return CODE_KEYS.stream()
+    private List<CodeMatch> findCodesInStringMap(Map<String, String> payload) {
+        return dedupeMatches(CODE_KEYS.stream()
                 .map(key -> findValueIgnoreCase(payload, key).map(value -> new CodeMatch(key, value)))
                 .filter(Optional::isPresent)
                 .map(Optional::get)
-                .findFirst();
+                .toList());
+    }
+
+    private List<CodeMatch> dedupeMatches(List<CodeMatch> matches) {
+        Set<String> seen = new LinkedHashSet<>();
+        List<CodeMatch> result = new ArrayList<>();
+        for (CodeMatch match : matches) {
+            String value = cleanCandidate(match.value());
+            if (value != null && seen.add(value)) {
+                result.add(new CodeMatch(match.key(), value));
+            }
+        }
+        return result;
     }
 
     private Optional<String> findValueIgnoreCase(Map<String, ?> payload, String targetKey) {
@@ -409,6 +512,52 @@ public class ScanService {
 
     private String urlDecode(String value) {
         return URLDecoder.decode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
+    private ParsedScan parsed(String raw, String contentFormat, String codeType, String platform, List<String> candidates) {
+        List<String> normalizedCandidates = normalizeCandidates(candidates);
+        String parsedCode = normalizedCandidates.isEmpty() ? raw : normalizedCandidates.get(0);
+        return new ParsedScan(raw, parsedCode, contentFormat, codeType, platform, normalizedCandidates);
+    }
+
+    private List<String> candidateCodes(String raw) {
+        Set<String> candidates = new LinkedHashSet<>();
+        String cleanedRaw = cleanCandidate(raw);
+        if (cleanedRaw != null) {
+            candidates.add(cleanedRaw);
+        }
+        Matcher matcher = EXPRESS_LIKE_PATTERN.matcher(raw == null ? "" : raw);
+        while (matcher.find()) {
+            String candidate = cleanCandidate(matcher.group(1));
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
+        }
+        return new ArrayList<>(candidates);
+    }
+
+    private List<String> normalizeCandidates(List<String> candidates) {
+        Set<String> result = new LinkedHashSet<>();
+        for (String candidate : candidates) {
+            String cleaned = cleanCandidate(candidate);
+            if (cleaned != null) {
+                result.add(cleaned);
+            }
+        }
+        return new ArrayList<>(result);
+    }
+
+    private String cleanCandidate(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.trim();
+        while ((cleaned.startsWith("\"") && cleaned.endsWith("\""))
+                || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+        }
+        cleaned = cleaned.replaceAll("^[,;，；]+|[,;，；]+$", "");
+        return cleaned.isBlank() ? null : cleaned;
     }
 
     private Map<String, Object> toRecordView(ScanRecord record) {
@@ -528,7 +677,7 @@ public class ScanService {
         return null;
     }
 
-    private record ParsedScan(String rawContent, String parsedCode, String contentFormat, String codeType, String merchantPlatform) {
+    private record ParsedScan(String rawContent, String parsedCode, String contentFormat, String codeType, String merchantPlatform, List<String> candidateCodes) {
     }
 
     private record CodeMatch(String key, String value) {

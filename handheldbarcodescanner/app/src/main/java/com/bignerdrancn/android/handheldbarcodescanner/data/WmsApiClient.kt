@@ -80,6 +80,22 @@ class WmsApiClient(
     suspend fun putawayInbound(id: Long): JsonMap =
         post("/inbounds/$id/putaway").asMap()
 
+    suspend fun scanInboundPutaway(
+        rawContent: String,
+        scanFormat: String = "AUTO",
+        sourceDevice: String = "ANDROID_HANDHELD",
+        operatorName: String
+    ): JsonMap {
+        val payload = JSONObject()
+            .put("rawContent", rawContent)
+            .put("scanFormat", scanFormat)
+            .put("sourceDevice", sourceDevice)
+            .put("operatorName", operatorName)
+            .put("scannerInterface", "ANDROID_CAMERA")
+            .put("remark", "手持扫码枪入库贴码扫码确认")
+        return post("/inbounds/scan-putaway", payload).asMap()
+    }
+
     suspend fun pickupAction(
         id: Long,
         action: String,

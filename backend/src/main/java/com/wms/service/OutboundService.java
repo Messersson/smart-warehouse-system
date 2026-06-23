@@ -7,6 +7,7 @@ import com.wms.common.BusinessCodeGenerator;
 import com.wms.dto.OutboundOrderItemRequest;
 import com.wms.dto.OutboundOrderRequest;
 import com.wms.dto.OutboundScanRequest;
+import com.wms.entity.CargoCodeRecord;
 import com.wms.entity.Customer;
 import com.wms.entity.InboundOrderItem;
 import com.wms.entity.OutboundOrder;
@@ -14,6 +15,7 @@ import com.wms.entity.OutboundOrderItem;
 import com.wms.entity.Product;
 import com.wms.entity.ScanRecord;
 import com.wms.entity.Warehouse;
+import com.wms.repository.CargoCodeRecordRepository;
 import com.wms.repository.CustomerRepository;
 import com.wms.repository.InboundOrderItemRepository;
 import com.wms.repository.OutboundOrderItemRepository;
@@ -31,9 +33,12 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -42,15 +47,25 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OutboundService {
 
-    private static final List<String> PRODUCT_CODE_KEYS = List.of("cargoCode", "barcode", "barCode", "skuCode", "sku", "code", "productCode");
-    private static final Pattern PRODUCT_KEY_VALUE_PATTERN = Pattern.compile(
-            "(?i)(cargoCode|barcode|barCode|skuCode|sku|code|productCode)\\s*[:=]\\s*([^\\s,;|]+)"
+    private static final List<String> PRODUCT_CODE_KEYS = List.of(
+            "cargoCode", "externalCode", "externalNo", "merchantCode",
+            "barcode", "barCode", "bar_code", "skuCode", "sku_code", "sku",
+            "code", "productCode", "product_code", "waybillCode", "waybillNo",
+            "mailNo", "mailno", "expressNo", "expressCode", "logisticsNo",
+            "trackingNo", "trackingNumber", "packageId", "packageNo", "packageCode",
+            "parcelNo", "parcelCode", "mtOrderId", "meituanOrderId", "wmOrderId",
+            "tbOrderId", "tmallOrderId", "pddOrderSn"
     );
+    private static final Pattern PRODUCT_KEY_VALUE_PATTERN = Pattern.compile(
+            "(?i)(cargoCode|externalCode|externalNo|merchantCode|barcode|barCode|bar_code|skuCode|sku_code|sku|code|productCode|product_code|waybillCode|waybillNo|mailNo|mailno|expressNo|expressCode|logisticsNo|trackingNo|trackingNumber|packageId|packageNo|packageCode|parcelNo|parcelCode|mtOrderId|meituanOrderId|wmOrderId|tbOrderId|tmallOrderId|pddOrderSn|货物码|外部码|商家码|快递单号|运单号|物流单号|包裹号|商品条码|条形码|商品编码)\\s*[:=：]\\s*([^\\s,;|，；]+)"
+    );
+    private static final Pattern EXPRESS_LIKE_PATTERN = Pattern.compile("\\b([A-Z]{1,6}\\d{6,24}|\\d{10,24})\\b");
     private static final Pattern GS1_GTIN_PATTERN = Pattern.compile("\\(01\\)(\\d{14})");
 
     private final OutboundOrderRepository outboundOrderRepository;
     private final OutboundOrderItemRepository outboundOrderItemRepository;
     private final InboundOrderItemRepository inboundOrderItemRepository;
+    private final CargoCodeRecordRepository cargoCodeRecordRepository;
     private final ProductRepository productRepository;
     private final ScanRecordRepository scanRecordRepository;
     private final WarehouseRepository warehouseRepository;
@@ -161,8 +176,13 @@ public class OutboundService {
         }
 
         String rawContent = request == null ? "" : defaultText(request.getRawContent(), "");
-        String scanCode = extractScanCode(rawContent);
-        ScannedProduct scannedProduct = resolveScannedProduct(scanCode);
+        ScannedProduct scannedProduct = extractScanCandidates(rawContent).stream()
+                .map(this::tryResolveScannedProduct)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("扫码商品不在商品档案或货物码记录中: " + rawContent));
+        String scanCode = scannedProduct.scanCode();
         Product product = scannedProduct.product();
 
         List<OutboundOrderItem> items = outboundOrderItemRepository.findByOrderIdOrderByIdAsc(id);
@@ -193,7 +213,19 @@ public class OutboundService {
         return detail(id);
     }
 
-    private ScannedProduct resolveScannedProduct(String scanCode) {
+    private Optional<ScannedProduct> tryResolveScannedProduct(String scanCode) {
+        Optional<CargoCodeRecord> cargoCodeRecord = cargoCodeRecordRepository.findFirstByCargoCodeOrderByIdDesc(scanCode)
+                .or(() -> cargoCodeRecordRepository.findFirstByRawContentOrderByIdDesc(scanCode));
+        if (cargoCodeRecord.isPresent()) {
+            CargoCodeRecord record = cargoCodeRecord.get();
+            InboundOrderItem item = inboundOrderItemRepository.findById(record.getInboundOrderItemId())
+                    .orElseThrow(() -> new BusinessException("货物码已识别，但入库明细不存在: " + scanCode));
+            Product product = productRepository.findById(item.getProductId())
+                    .orElseGet(() -> productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(item.getSkuCode(), item.getSkuCode())
+                            .orElseThrow(() -> new BusinessException("货物码已识别，但商品档案不存在: " + scanCode)));
+            return Optional.of(new ScannedProduct(product, "CARGO_CODE", record.getCargoCode()));
+        }
+
         Optional<InboundOrderItem> inboundItem = inboundOrderItemRepository.findFirstByCargoCodeOrExternalCodeOrderByIdDesc(scanCode, scanCode)
                 .or(() -> inboundOrderItemRepository.findFirstByCargoCodeContentOrderByIdDesc(scanCode));
         if (inboundItem.isPresent()) {
@@ -201,12 +233,11 @@ public class OutboundService {
             Product product = productRepository.findById(item.getProductId())
                     .orElseGet(() -> productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(item.getSkuCode(), item.getSkuCode())
                             .orElseThrow(() -> new BusinessException("货物码已识别，但商品档案不存在: " + scanCode)));
-            return new ScannedProduct(product, "CARGO_CODE");
+            return Optional.of(new ScannedProduct(product, "CARGO_CODE", scanCode));
         }
 
-        Product product = productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(scanCode, scanCode)
-                .orElseThrow(() -> new BusinessException("扫码商品不在商品档案中: " + scanCode));
-        return new ScannedProduct(product, "PRODUCT");
+        return productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(scanCode, scanCode)
+                .map(product -> new ScannedProduct(product, "PRODUCT", scanCode));
     }
 
     private void saveItems(OutboundOrder order, List<OutboundOrderItemRequest> items) {
@@ -266,65 +297,70 @@ public class OutboundService {
         }
     }
 
-    private String extractScanCode(String rawContent) {
+    private List<String> extractScanCandidates(String rawContent) {
         String raw = rawContent == null ? "" : rawContent.trim();
         if (raw.isBlank()) {
             throw new BusinessException("扫码内容不能为空");
         }
-        return parseJsonCode(raw)
-                .or(() -> parseUriCode(raw))
-                .or(() -> parseKeyValueCode(raw))
-                .or(() -> parseGs1Code(raw))
-                .orElse(raw);
+        List<String> candidates = new ArrayList<>();
+        candidates.addAll(parseJsonCodes(raw));
+        candidates.addAll(parseUriCodes(raw));
+        candidates.addAll(parseKeyValueCodes(raw));
+        parseGs1Code(raw).ifPresent(candidates::add);
+        candidates.addAll(rawCandidates(raw));
+        return normalizeCandidates(candidates);
     }
 
-    private Optional<String> parseJsonCode(String raw) {
+    private List<String> parseJsonCodes(String raw) {
         if (!(raw.startsWith("{") && raw.endsWith("}"))) {
-            return Optional.empty();
+            return List.of();
         }
         try {
             Map<String, Object> payload = objectMapper.readValue(raw, new TypeReference<>() {
             });
-            return findProductCode(payload);
+            return findProductCodes(payload);
         } catch (Exception ignored) {
-            return Optional.empty();
+            return List.of();
         }
     }
 
-    private Optional<String> parseUriCode(String raw) {
+    private List<String> parseUriCodes(String raw) {
         if (!raw.contains("?") && !raw.contains("://")) {
-            return Optional.empty();
+            return List.of();
         }
         try {
             URI uri = URI.create(raw);
+            List<String> candidates = new ArrayList<>();
             Map<String, String> query = splitQuery(uri.getRawQuery());
-            return PRODUCT_CODE_KEYS.stream()
+            PRODUCT_CODE_KEYS.stream()
                     .map(key -> findValueIgnoreCase(query, key))
                     .filter(Optional::isPresent)
                     .map(Optional::get)
-                    .findFirst()
-                    .or(() -> {
-                        String path = uri.getPath();
-                        if (path == null || path.isBlank()) {
-                            return Optional.empty();
-                        }
-                        String[] parts = path.split("/");
-                        for (int i = parts.length - 1; i >= 0; i--) {
-                            String part = urlDecode(parts[i]);
-                            if (!part.isBlank()) {
-                                return Optional.of(part);
-                            }
-                        }
-                        return Optional.empty();
-                    });
+                    .forEach(candidates::add);
+            String path = uri.getPath();
+            if (path != null && !path.isBlank()) {
+                String[] parts = path.split("/");
+                for (int i = parts.length - 1; i >= 0; i--) {
+                    String part = urlDecode(parts[i]);
+                    if (!part.isBlank()) {
+                        candidates.add(part);
+                        break;
+                    }
+                }
+            }
+            return candidates;
         } catch (Exception ignored) {
-            return Optional.empty();
+            return List.of();
         }
     }
 
-    private Optional<String> parseKeyValueCode(String raw) {
+    private List<String> parseKeyValueCodes(String raw) {
         Matcher matcher = PRODUCT_KEY_VALUE_PATTERN.matcher(raw);
-        return matcher.find() ? Optional.of(matcher.group(2).trim()) : Optional.empty();
+        List<String> candidates = new ArrayList<>();
+        while (matcher.find()) {
+            candidates.add(matcher.group(2).trim());
+        }
+        return candidates;
     }
 
     private Optional<String> parseGs1Code(String raw) {
@@ -332,20 +368,22 @@ public class OutboundService {
         return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
     }
 
-    private Optional<String> findProductCode(Map<String, Object> payload) {
-        return PRODUCT_CODE_KEYS.stream()
+    private List<String> findProductCodes(Map<String, Object> payload) {
+        List<String> matches = PRODUCT_CODE_KEYS.stream()
                 .map(key -> findValueIgnoreCase(payload, key))
                 .filter(Optional::isPresent)
                 .map(Optional::get)
-                .findFirst()
-                .or(() -> payload.values().stream()
-                        .filter(Map.class::isInstance)
-                        .map(value -> (Map<?, ?>) value)
-                        .map(this::stringKeyMap)
-                        .map(this::findProductCode)
-                        .filter(Optional::isPresent)
-                        .map(Optional::get)
-                        .findFirst());
+                .toList();
+        List<String> nested = payload.values().stream()
+                .filter(Map.class::isInstance)
+                .map(value -> (Map<?, ?>) value)
+                .map(this::stringKeyMap)
+                .flatMap(map -> findProductCodes(map).stream())
+                .toList();
+        List<String> result = new ArrayList<>();
+        result.addAll(matches);
+        result.addAll(nested);
+        return result;
     }
 
     private Optional<String> findValueIgnoreCase(Map<String, ?> payload, String targetKey) {
@@ -386,6 +424,46 @@ public class OutboundService {
         return URLDecoder.decode(value == null ? "" : value, StandardCharsets.UTF_8);
     }
 
+    private List<String> rawCandidates(String raw) {
+        Set<String> candidates = new LinkedHashSet<>();
+        String cleaned = cleanCandidate(raw);
+        if (cleaned != null) {
+            candidates.add(cleaned);
+        }
+        Matcher matcher = EXPRESS_LIKE_PATTERN.matcher(raw == null ? "" : raw);
+        while (matcher.find()) {
+            String candidate = cleanCandidate(matcher.group(1));
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
+        }
+        return new ArrayList<>(candidates);
+    }
+
+    private List<String> normalizeCandidates(List<String> candidates) {
+        Set<String> result = new LinkedHashSet<>();
+        for (String candidate : candidates) {
+            String cleaned = cleanCandidate(candidate);
+            if (cleaned != null) {
+                result.add(cleaned);
+            }
+        }
+        return new ArrayList<>(result);
+    }
+
+    private String cleanCandidate(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.trim();
+        while ((cleaned.startsWith("\"") && cleaned.endsWith("\""))
+                || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+        }
+        cleaned = cleaned.replaceAll("^[,;，；]+|[,;，；]+$", "");
+        return cleaned.isBlank() ? null : cleaned;
+    }
+
     private void saveScanRecord(OutboundOrder order, OutboundOrderItem item, Product product, String rawContent, String scanCode, String codeType, OutboundScanRequest request) {
         ScanRecord record = new ScanRecord();
         record.setRawContent(rawContent);
@@ -413,6 +491,6 @@ public class OutboundService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
-    private record ScannedProduct(Product product, String codeType) {
+    private record ScannedProduct(Product product, String codeType, String scanCode) {
     }
 }

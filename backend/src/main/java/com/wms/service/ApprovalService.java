@@ -10,6 +10,7 @@ import com.wms.repository.ApprovalOrderRepository;
 import com.wms.repository.ApprovalRecordRepository;
 import com.wms.repository.ExceptionTicketRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +27,9 @@ public class ApprovalService {
     private final ApprovalOrderRepository approvalOrderRepository;
     private final ApprovalRecordRepository approvalRecordRepository;
     private final ExceptionTicketRepository exceptionTicketRepository;
+
+    @Value("${wms.approval.auto-approve:false}")
+    private boolean autoApprove;
 
     public List<Map<String, Object>> list() {
         return approvalOrderRepository.findAllByOrderByCreatedAtDesc().stream()
@@ -59,10 +63,18 @@ public class ApprovalService {
         order.setCurrentNode("MANAGER_REVIEW");
         order.setApplyReason(request.getApplyReason());
         order.setAppliedAt(LocalDateTime.now());
+        if (autoApprove) {
+            order.setStatus("APPROVED");
+            order.setApprovalComment("自动审批通过");
+            order.setDecidedAt(LocalDateTime.now());
+        }
         ApprovalOrder saved = approvalOrderRepository.save(order);
 
         saveRecord(saved.getId(), "SUBMIT", saved.getApplicantName(), saved.getApplyReason());
-        updateLinkedBizApprovalStatus(saved, "PENDING");
+        if (autoApprove) {
+            saveRecord(saved.getId(), "AUTO_APPROVE", saved.getApproverName(), "自动审批通过");
+        }
+        updateLinkedBizApprovalStatus(saved, saved.getStatus());
         return toView(saved);
     }
 

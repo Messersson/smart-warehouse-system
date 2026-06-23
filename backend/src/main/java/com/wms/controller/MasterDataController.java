@@ -63,7 +63,9 @@ public class MasterDataController {
     @PostMapping("/warehouses")
     public ApiResponse<?> createWarehouse(@RequestBody Warehouse warehouse) {
         applyWarehouseDefaults(warehouse, null);
-        return ApiResponse.ok(warehouseRepository.save(warehouse));
+        Warehouse saved = warehouseRepository.save(warehouse);
+        ensureDefaultLocation(saved);
+        return ApiResponse.ok(saved);
     }
 
     @PutMapping("/warehouses/{id}")
@@ -255,6 +257,42 @@ public class MasterDataController {
         if (warehouse.getScanMode() == null) {
             warehouse.setScanMode(existing == null ? "QR_CODE" : existing.getScanMode());
         }
+    }
+
+    private void ensureDefaultLocation(Warehouse warehouse) {
+        if (warehouse == null || warehouse.getId() == null) {
+            return;
+        }
+        if (!locationRepository.findByWarehouseIdOrderByLocationCodeAsc(warehouse.getId()).isEmpty()) {
+            return;
+        }
+
+        Location location = new Location();
+        location.setWarehouseId(warehouse.getId());
+        location.setZoneName("默认库区");
+        location.setLocationCode(defaultLocationCode(warehouse));
+        location.setLocationName("默认库位");
+        location.setAisleNo("A");
+        location.setShelfNo("01");
+        location.setLayerNo("01");
+        location.setBinNo("01");
+        location.setCapacityQty(new BigDecimal("999999"));
+        location.setUsedQty(BigDecimal.ZERO);
+        location.setPickable(Boolean.TRUE);
+        location.setStatus("ACTIVE");
+        location.setRemark("新建仓库自动生成，用于入库自动分配和货物码标签生成");
+        locationRepository.save(location);
+    }
+
+    private String defaultLocationCode(Warehouse warehouse) {
+        String warehouseCode = warehouse.getWarehouseCode() == null || warehouse.getWarehouseCode().isBlank()
+                ? "WH-" + warehouse.getId()
+                : warehouse.getWarehouseCode().trim();
+        String baseCode = warehouseCode + "-DEFAULT";
+        if (locationRepository.findFirstByLocationCodeOrderByIdAsc(baseCode).isEmpty()) {
+            return baseCode;
+        }
+        return warehouseCode + "-DEFAULT-" + warehouse.getId();
     }
 
     private void applyProductDefaults(Product product, Product existing) {
