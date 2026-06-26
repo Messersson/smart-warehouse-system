@@ -113,6 +113,14 @@
                 扫码确认入库
               </el-button>
               <el-button
+                type="success"
+                plain
+                :loading="actionLoading === 'transferOutbound'"
+                @click="transferInboundCargoToOutbound"
+              >
+                扫码转出库
+              </el-button>
+              <el-button
                 :disabled="!result.orderId"
                 @click="$router.push({ path: '/inbounds' })"
               >
@@ -425,6 +433,36 @@ export default {
         await this.fetchScanRecords()
       } catch (error) {
         this.$message.error(error.message || '入库扫码确认失败')
+      } finally {
+        this.actionLoading = ''
+      }
+    },
+    async transferInboundCargoToOutbound() {
+      if (!this.result || this.result.entityType !== 'INBOUND_ORDER_ITEM') {
+        return
+      }
+      const rawContent = this.code.trim() || this.result.cargoCode
+      if (!rawContent) {
+        this.$message.error('请先扫描入库货物标签')
+        return
+      }
+      try {
+        this.actionLoading = 'transferOutbound'
+        const response = await post('/outbounds/scan-transfer', {
+          rawContent,
+          scanFormat: this.scanFormat,
+          sourceDevice: 'WEB_PDA',
+          scannerInterface: this.scannerInterface,
+          scannerDeviceId: this.scannerDeviceId,
+          operatorName: '系统管理员'
+        })
+        const data = response.data || {}
+        this.result = { ...data, entityType: 'OUTBOUND_ORDER' }
+        this.outboundScanCode = ''
+        this.$message.success(data.message || response.message || '已转入出库单')
+        await this.fetchScanRecords()
+      } catch (error) {
+        this.$message.error(error.message || '扫码转出库失败')
       } finally {
         this.actionLoading = ''
       }

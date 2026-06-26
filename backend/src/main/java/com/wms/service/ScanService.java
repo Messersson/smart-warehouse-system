@@ -343,6 +343,9 @@ public class ScanService {
         data.put("putawayScanConfirmedAt", orderItem.getPutawayScanConfirmedAt());
         data.put("putawayScanOperator", orderItem.getPutawayScanOperator());
         data.put("putawayScanRecordId", orderItem.getPutawayScanRecordId());
+        data.put("outboundOrderId", orderItem.getOutboundOrderId());
+        data.put("outboundOrderNo", orderItem.getOutboundOrderNo());
+        data.put("outboundTransferredAt", orderItem.getOutboundTransferredAt());
         return data;
     }
 

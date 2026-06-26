@@ -49,4 +49,9 @@ public class OutboundController {
     public ApiResponse<?> scanShip(@PathVariable Long id, @RequestBody OutboundScanRequest request) {
         return ApiResponse.ok("扫码确认成功", outboundService.scanShip(id, request));
     }
+
+    @PostMapping("/scan-transfer")
+    public ApiResponse<?> scanTransfer(@RequestBody OutboundScanRequest request) {
+        return ApiResponse.ok("入库货物已转出库", outboundService.scanTransfer(request));
+    }
 }

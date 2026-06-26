@@ -468,6 +468,26 @@ fun WarehouseScannerApp(
         }
     }
 
+    suspend fun transferInboundCargoToOutbound(code: String): JsonMap? {
+        val trimmed = code.trim()
+        if (trimmed.isBlank()) {
+            showMessage("请先扫描入库货物标签")
+            return null
+        }
+
+        val updated = api.scanTransferOutbound(
+            rawContent = trimmed,
+            operatorName = session.operatorName()
+        ) + mapOf("entityType" to "OUTBOUND_ORDER")
+        selectedOutbound = updated
+        scanResult = updated
+        scanCode = ""
+        showMessage(updated.string("message").ifBlank { "入库货物已转入出库单" })
+        loadOutbounds(selectFirst = false)
+        loadInbounds(selectFirst = false)
+        return updated
+    }
+
     fun submitStockTakeCount() {
         val take = selectedTake ?: return
         val itemId = selectedTakeItemId ?: return
@@ -647,7 +667,11 @@ fun WarehouseScannerApp(
             showMessage("扫码确认成功")
             loadOutbounds(selectFirst = false)
         } catch (exception: ApiException) {
-            showMessage(exception.message)
+            runCatching {
+                transferInboundCargoToOutbound(trimmed)
+            }.onFailure {
+                showMessage(exception.message)
+            }
         } finally {
             outboundLoading = false
         }
@@ -667,15 +691,27 @@ fun WarehouseScannerApp(
                 operatorName = session.operatorName()
             )
             val lookup = scanSave["lookupData"].asMap()
-            if (lookup.isEmpty() || lookup.string("entityType") != "OUTBOUND_ORDER") {
-                showMessage("扫码结果不是出库单")
+            if (lookup.isEmpty()) {
+                transferInboundCargoToOutbound(code)
                 return
             }
-            selectedOutbound = api.outboundDetail(lookup.long("id")) + mapOf("entityType" to "OUTBOUND_ORDER")
+            when (lookup.string("entityType")) {
+                "OUTBOUND_ORDER" -> {
+                    selectedOutbound = api.outboundDetail(lookup.long("id")) + mapOf("entityType" to "OUTBOUND_ORDER")
+                    if (outboundOrders.isEmpty()) {
+                        outboundOrders = api.outbounds()
+                    }
+                    showMessage("已打开出库单")
+                }
+                "INBOUND_ORDER_ITEM" -> transferInboundCargoToOutbound(code)
+                else -> {
+                    transferInboundCargoToOutbound(code)
+                    return
+                }
+            }
             if (outboundOrders.isEmpty()) {
                 outboundOrders = api.outbounds()
             }
-            showMessage("已打开出库单")
         } catch (exception: ApiException) {
             showMessage(exception.message)
         } finally {

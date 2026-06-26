@@ -312,6 +312,9 @@ CREATE TABLE inbound_order_item (
   putaway_scan_confirmed_at DATETIME DEFAULT NULL,
   putaway_scan_operator VARCHAR(128) DEFAULT NULL,
   putaway_scan_record_id BIGINT DEFAULT NULL,
+  outbound_order_id BIGINT DEFAULT NULL,
+  outbound_order_no VARCHAR(64) DEFAULT NULL,
+  outbound_transferred_at DATETIME DEFAULT NULL,
   remark VARCHAR(255) DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -319,7 +322,8 @@ CREATE TABLE inbound_order_item (
   KEY idx_inbound_item_cargo_code (cargo_code),
   KEY idx_inbound_item_external_code (external_code),
   KEY idx_inbound_item_cargo_content (cargo_code_content(255)),
-  KEY idx_inbound_item_putaway_scan (putaway_scan_confirmed)
+  KEY idx_inbound_item_putaway_scan (putaway_scan_confirmed),
+  KEY idx_inbound_item_outbound (outbound_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE cargo_code_record (
@@ -759,7 +763,7 @@ INSERT INTO inbound_order (order_no, warehouse_id, supplier_id, owner_id, order_
 ('WMS202604150001', 1, 1, 1, 'PURCHASE', 'RECEIVED', 'PO202604150001', DATE_SUB(NOW(), INTERVAL 4 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR), 100, 100, '系统管理员', 'WMS202604150001', '示例入库单，故意保留未上架用于演示滞留预警');
 
 INSERT INTO inbound_order_item (order_id, product_id, sku_code, product_name, batch_no, cargo_code, cargo_code_type, cargo_code_content, external_platform, external_code, production_date, expiry_date, expected_qty, actual_qty, qualified_qty, location_id, remark) VALUES
-(1, 1, 'SKU-001', '矿泉水 550ml', 'BATCH-20260415-001', 'WMSG202604150001', 'QR_CODE', '{"code":"WMSG202604150001","cargoCode":"WMSG202604150001","orderNo":"WMS202604150001","skuCode":"SKU-001","productName":"矿泉水 550ml","source":"WMS_INBOUND"}', 'OTHER', NULL, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 365 DAY), 100, 100, 100, 1, '默认示例明细');
+(1, 1, 'SKU-001', '矿泉水 550ml', 'BATCH-20260415-001', 'G0000001', 'QR_CODE', '{"code":"G0000001","cargoCode":"G0000001","orderNo":"WMS202604150001","skuCode":"SKU-001","productName":"矿泉水 550ml","source":"WMS_INBOUND"}', 'OTHER', NULL, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 365 DAY), 100, 100, 100, 1, '默认示例明细');
 
 INSERT INTO outbound_order (order_no, warehouse_id, customer_id, owner_id, carrier_id, order_type, status, source_no, priority_level, planned_ship_time, total_planned_qty, total_shipped_qty, operator_name, logistics_no, remark) VALUES
 ('WMS202604150002', 1, 1, 1, 1, 'SALES', 'CREATED', 'SO202604150001', 'HIGH', DATE_SUB(NOW(), INTERVAL 2 HOUR), 20, 0, '系统管理员', 'WMS202604150002', '示例出库单，用于演示出库超时预警');

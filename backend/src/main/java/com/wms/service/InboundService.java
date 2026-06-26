@@ -68,6 +68,7 @@ public class InboundService {
 
         return inboundOrderRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(order -> toOrderView(order, warehouseMap, supplierMap, customerMap))
+                .filter(order -> !Boolean.TRUE.equals(order.get("fullyTransferredOutbound")))
                 .toList();
     }
 
@@ -164,7 +165,7 @@ public class InboundService {
             order.setReceivedAt(LocalDateTime.now());
         }
 
-        List<InboundOrderItem> items = inboundOrderItemRepository.findByOrderIdOrderByIdAsc(id);
+        List<InboundOrderItem> items = activeInboundItems(id);
         List<InboundOrderItem> unconfirmedItems = items.stream()
                 .filter(item -> !Boolean.TRUE.equals(item.getPutawayScanConfirmed()))
                 .toList();
@@ -222,13 +223,21 @@ public class InboundService {
                 .orElseThrow(() -> new BusinessException("入库货物明细不存在"));
         InboundOrder order = inboundOrderRepository.findById(item.getOrderId())
                 .orElseThrow(() -> new BusinessException("入库单不存在"));
+        if (item.getOutboundOrderId() != null) {
+            throw new BusinessException("该货物已转入出库单 " + item.getOutboundOrderNo() + "，不能重复入库确认");
+        }
         if ("PUTAWAY_COMPLETED".equals(order.getStatus())) {
             throw new BusinessException("该货物所属入库单已完成上架，不能重复确认");
         }
+        Warehouse warehouse = warehouseRepository.findById(order.getWarehouseId())
+                .orElseThrow(() -> new BusinessException("仓库不存在"));
         if (item.getLocationId() == null) {
-            throw new BusinessException("该货物尚未分配库位，请先分配库位后再打印并扫码确认");
+            if (Boolean.TRUE.equals(warehouse.getAutoAssignLocation())) {
+                item.setLocationId(stockService.resolveInboundLocation(order.getWarehouseId(), defaultQty(item.getQualifiedQty())));
+            } else {
+                throw new BusinessException("该货物尚未分配库位，请先分配库位后再打印并扫码确认");
+            }
         }
-
         Map<String, Object> recordData = castMap(scanResult.get("record"));
         item.setPutawayScanConfirmed(true);
         item.setPutawayScanConfirmedAt(LocalDateTime.now());
@@ -321,7 +330,10 @@ public class InboundService {
             item.setSkuCode(product.getSkuCode());
             item.setProductName(product.getProductName());
             item.setBatchNo(itemRequest.getBatchNo());
-            item.setCargoCode(defaultText(itemRequest.getCargoCode(), BusinessCodeGenerator.cargoCode()));
+            String requestedCargoCode = itemRequest.getCargoCode() == null || itemRequest.getCargoCode().isBlank()
+                    ? null
+                    : itemRequest.getCargoCode().trim();
+            item.setCargoCode(requestedCargoCode);
             item.setCargoCodeType(resolveCargoCodeType(itemRequest.getCargoCodeType(), warehouse));
             item.setExternalPlatform(defaultText(itemRequest.getExternalPlatform(), supplier == null ? null : supplier.getPlatformType()));
             item.setExternalCode(itemRequest.getExternalCode());
@@ -340,8 +352,12 @@ public class InboundService {
             item.setLocationId(locationId);
             Location location = resolveLocationForLabel(locationId, order.getWarehouseId());
             item.setRemark(itemRequest.getRemark());
-            item.setCargoCodeContent(buildCargoCodeContent(order, item, product, warehouse, supplier, location));
             InboundOrderItem savedItem = inboundOrderItemRepository.save(item);
+            if (requestedCargoCode == null) {
+                savedItem.setCargoCode(BusinessCodeGenerator.cargoCode(savedItem.getId()));
+            }
+            savedItem.setCargoCodeContent(buildCargoCodeContent(order, savedItem, product, warehouse, supplier, location));
+            savedItem = inboundOrderItemRepository.save(savedItem);
             saveCargoCodeRecord(order, savedItem, warehouse, location);
         });
     }
@@ -380,9 +396,15 @@ public class InboundService {
         item.put("totalActualQty", order.getTotalActualQty());
         item.put("operatorName", order.getOperatorName());
         item.put("remark", order.getRemark());
-        item.put("items", inboundOrderItemRepository.findByOrderIdOrderByIdAsc(order.getId()).stream()
+        List<InboundOrderItem> allItems = inboundOrderItemRepository.findByOrderIdOrderByIdAsc(order.getId());
+        List<InboundOrderItem> activeItems = allItems.stream()
+                .filter(itemEntity -> itemEntity.getOutboundOrderId() == null)
+                .toList();
+        item.put("items", activeItems.stream()
                 .map(this::toItemView)
                 .toList());
+        item.put("transferredItemCount", allItems.size() - activeItems.size());
+        item.put("fullyTransferredOutbound", !allItems.isEmpty() && activeItems.isEmpty());
         return item;
     }
 
@@ -419,6 +441,9 @@ public class InboundService {
         data.put("putawayScanConfirmedAt", item.getPutawayScanConfirmedAt());
         data.put("putawayScanOperator", item.getPutawayScanOperator());
         data.put("putawayScanRecordId", item.getPutawayScanRecordId());
+        data.put("outboundOrderId", item.getOutboundOrderId());
+        data.put("outboundOrderNo", item.getOutboundOrderNo());
+        data.put("outboundTransferredAt", item.getOutboundTransferredAt());
         data.put("remark", item.getRemark());
         List<Map<String, Object>> codeRecords = cargoCodeRecordRepository.findByInboundOrderItemIdOrderByIdAsc(item.getId()).stream()
                 .map(cargoCodeRecordService::toView)
@@ -426,6 +451,12 @@ public class InboundService {
         data.put("cargoCodeRecords", codeRecords);
         data.put("cargoCodeSvg", codeRecords.isEmpty() ? null : codeRecords.get(codeRecords.size() - 1).get("svgContent"));
         return data;
+    }
+
+    private List<InboundOrderItem> activeInboundItems(Long orderId) {
+        return inboundOrderItemRepository.findByOrderIdOrderByIdAsc(orderId).stream()
+                .filter(item -> item.getOutboundOrderId() == null)
+                .toList();
     }
 
     private void saveCargoCodeRecord(InboundOrder order, InboundOrderItem item, Warehouse warehouse, Location location) {

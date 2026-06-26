@@ -250,7 +250,7 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog title="货物码标签" :visible.sync="cargoCodeVisible" width="620px">
+    <el-dialog title="货物码标签" :visible.sync="cargoCodeVisible" width="920px">
       <div v-if="cargoCodeItem.id" class="cargo-code-preview">
         <div class="cargo-code-label" ref="cargoCodeLabel">
           <div class="cargo-code-title">{{ cargoCodeItem.productName }}</div>
@@ -275,6 +275,13 @@
       </div>
       <span slot="footer">
         <el-button @click="copyText(cargoCodeRawContent(cargoCodeItem))">复制码内容</el-button>
+        <el-button
+          type="success"
+          plain
+          :loading="cargoScanConfirming"
+          :disabled="cargoCodeItem.putawayScanConfirmed"
+          @click="confirmCargoCodeScan(cargoCodeRawContent(cargoCodeItem))"
+        >扫码确认入库</el-button>
         <el-button type="primary" :loading="cargoCodeRenderLoading" :disabled="!cargoCodeSvg" @click="printCargoCodeLabel">打印标签</el-button>
       </span>
     </el-dialog>
@@ -438,9 +445,12 @@ export default {
       cargoCodeSvg: '',
       cargoCodeRenderLoading: false,
       cargoCodeRenderError: '',
+      cargoScanConfirming: false,
       cargoCodeRecordsVisible: false,
       cargoCodeRecordsLoading: false,
       cargoCodeRecords: [],
+      scannerBuffer: '',
+      scannerBufferTimer: null,
       quickCreateVisible: false,
       quickCreateResource: '',
       quickCreateTarget: null,
@@ -463,6 +473,16 @@ export default {
     await Promise.all([this.fetchRows(), this.fetchLookups()])
     if (this.$route.path === '/cargo-code-records') {
       await this.openCargoCodeRecords()
+    }
+  },
+  mounted() {
+    window.addEventListener('keydown', this.handleCargoScannerKeydown, true)
+  },
+  beforeDestroy() {
+    window.removeEventListener('keydown', this.handleCargoScannerKeydown, true)
+    if (this.scannerBufferTimer) {
+      clearTimeout(this.scannerBufferTimer)
+      this.scannerBufferTimer = null
     }
   },
   computed: {
@@ -564,11 +584,11 @@ export default {
       }
       this.cargoCodeVisible = true
       this.cargoCodeSvg = this.savedCargoCodeSvg(this.cargoCodeItem)
-      if (!this.cargoCodeSvg) {
+      if (this.cargoCodeItem.cargoCodeType === 'BAR_CODE' || !this.cargoCodeSvg) {
         await this.renderCargoCode(this.cargoCodeItem)
       }
     },
-    openSavedCargoCode(record) {
+    async openSavedCargoCode(record) {
       this.cargoCodeItem = {
         id: record.inboundOrderItemId || record.id,
         productName: `码记录 #${record.id}`,
@@ -591,6 +611,9 @@ export default {
       this.cargoCodeSvg = record.svgContent || ''
       this.cargoCodeRenderError = this.cargoCodeSvg ? '' : '该记录未保存码图形'
       this.cargoCodeVisible = true
+      if (this.cargoCodeItem.cargoCodeType === 'BAR_CODE') {
+        await this.renderCargoCode(this.cargoCodeItem)
+      }
     },
     async openCargoCodeRecords() {
       this.cargoCodeRecordsVisible = true
@@ -620,8 +643,8 @@ export default {
         const response = await post('/scan/render-code', {
           rawContent,
           scanFormat: row.cargoCodeType || 'QR_CODE',
-          width: row.cargoCodeType === 'BAR_CODE' ? 520 : 240,
-          height: row.cargoCodeType === 'BAR_CODE' ? 140 : 240
+          width: row.cargoCodeType === 'BAR_CODE' ? 720 : 240,
+          height: row.cargoCodeType === 'BAR_CODE' ? 180 : 240
         })
         this.cargoCodeSvg = response.data && response.data.svg ? response.data.svg : ''
         if (!this.cargoCodeSvg) {
@@ -634,6 +657,89 @@ export default {
         this.cargoCodeRenderError = this.cargoCodeSvg ? '' : error.message || '码图形生成失败'
       } finally {
         this.cargoCodeRenderLoading = false
+      }
+    },
+    handleCargoScannerKeydown(event) {
+      if (!this.cargoCodeVisible || this.cargoScanConfirming) {
+        return
+      }
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        return
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        if (this.scannerBuffer) {
+          event.preventDefault()
+          event.stopPropagation()
+          this.flushCargoScannerBuffer()
+        }
+        return
+      }
+      if (!event.key || event.key.length !== 1) {
+        return
+      }
+      this.scannerBuffer += event.key
+      if (this.scannerBufferTimer) {
+        clearTimeout(this.scannerBufferTimer)
+      }
+      this.scannerBufferTimer = setTimeout(() => {
+        this.flushCargoScannerBuffer()
+      }, 180)
+    },
+    flushCargoScannerBuffer() {
+      if (this.scannerBufferTimer) {
+        clearTimeout(this.scannerBufferTimer)
+        this.scannerBufferTimer = null
+      }
+      const scannedCode = this.scannerBuffer.trim()
+      this.scannerBuffer = ''
+      if (scannedCode.length < 4) {
+        return
+      }
+      this.confirmCargoCodeScan(scannedCode)
+    },
+    async confirmCargoCodeScan(rawContent) {
+      const scanContent = (rawContent || '').trim()
+      if (!scanContent) {
+        this.$message.error('请先扫描货物标签')
+        return
+      }
+      try {
+        this.cargoScanConfirming = true
+        const response = await post('/inbounds/scan-putaway', {
+          rawContent: scanContent,
+          scanFormat: this.cargoCodeItem.cargoCodeType || 'AUTO',
+          sourceDevice: 'WEB_INBOUND_LABEL',
+          scannerInterface: 'WIRED_SCANNER',
+          scannerDeviceId: 'WEB_LABEL_PREVIEW',
+          operatorName: '系统管理员',
+          remark: '入库管理标签弹窗扫码确认'
+        })
+        const data = response.data || {}
+        const confirmedItemId = data.confirmedItemId || this.cargoCodeItem.id
+        const confirmedItem = (data.items || []).find(item => item.id === confirmedItemId)
+        if (confirmedItem) {
+          this.cargoCodeItem = {
+            ...this.cargoCodeItem,
+            ...confirmedItem
+          }
+        } else {
+          this.cargoCodeItem = {
+            ...this.cargoCodeItem,
+            putawayScanConfirmed: true
+          }
+        }
+        if (this.currentRow && this.currentRow.id === data.id) {
+          this.currentRow = data
+        }
+        this.$message.success(data.message || response.message || '扫码确认入库成功')
+        await Promise.all([
+          this.fetchRows(),
+          this.cargoCodeRecordsVisible ? this.fetchCargoCodeRecords() : Promise.resolve()
+        ])
+      } catch (error) {
+        this.$message.error(error.message || '扫码确认入库失败')
+      } finally {
+        this.cargoScanConfirming = false
       }
     },
     cargoCodeRawContent(row) {
@@ -884,7 +990,7 @@ export default {
 }
 
 .code-svg-box ::v-deep svg {
-  max-width: 100%;
+  max-width: none;
   height: auto;
 }
 

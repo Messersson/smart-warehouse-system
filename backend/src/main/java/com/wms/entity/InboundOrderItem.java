@@ -76,5 +76,14 @@ public class InboundOrderItem extends BaseEntity {
     @Column(name = "putaway_scan_record_id")
     private Long putawayScanRecordId;
 
+    @Column(name = "outbound_order_id")
+    private Long outboundOrderId;
+
+    @Column(name = "outbound_order_no")
+    private String outboundOrderNo;
+
+    @Column(name = "outbound_transferred_at")
+    private LocalDateTime outboundTransferredAt;
+
     private String remark;
 }

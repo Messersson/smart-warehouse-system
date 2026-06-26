@@ -22,6 +22,9 @@ public class SchemaMigrationRunner {
             migrateInboundOrderTable();
             migrateInboundOrderItemTable();
             migrateCargoCodeRecordTable();
+            backfillInboundCargoCodes();
+            backfillCargoCodeRecords();
+            shortenLegacyBarcodeCargoCodes();
             migrateNotificationTable();
             migrateScanRecordTable();
         };
@@ -64,10 +67,14 @@ public class SchemaMigrationRunner {
         addColumnIfMissing("inbound_order_item", "putaway_scan_confirmed_at", "DATETIME DEFAULT NULL");
         addColumnIfMissing("inbound_order_item", "putaway_scan_operator", "VARCHAR(128) DEFAULT NULL");
         addColumnIfMissing("inbound_order_item", "putaway_scan_record_id", "BIGINT DEFAULT NULL");
+        addColumnIfMissing("inbound_order_item", "outbound_order_id", "BIGINT DEFAULT NULL");
+        addColumnIfMissing("inbound_order_item", "outbound_order_no", "VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing("inbound_order_item", "outbound_transferred_at", "DATETIME DEFAULT NULL");
         addIndexIfMissing("inbound_order_item", "idx_inbound_item_cargo_code", "(cargo_code)");
         addIndexIfMissing("inbound_order_item", "idx_inbound_item_external_code", "(external_code)");
         addIndexIfMissing("inbound_order_item", "idx_inbound_item_cargo_content", "(cargo_code_content(255))");
         addIndexIfMissing("inbound_order_item", "idx_inbound_item_putaway_scan", "(putaway_scan_confirmed)");
+        addIndexIfMissing("inbound_order_item", "idx_inbound_item_outbound", "(outbound_order_id)");
     }
 
     private void migrateCargoCodeRecordTable() {
@@ -115,6 +122,102 @@ public class SchemaMigrationRunner {
         addColumnIfMissing("cargo_code_record", "zone_name", "VARCHAR(128) DEFAULT NULL");
         addIndexIfMissing("cargo_code_record", "idx_cargo_code_record_operation", "(operation_code)");
         addIndexIfMissing("cargo_code_record", "idx_cargo_code_record_location", "(location_code)");
+    }
+
+    private void backfillInboundCargoCodes() {
+        jdbcTemplate.execute("""
+                UPDATE inbound_order_item
+                SET cargo_code = CONCAT('G', LPAD(UPPER(CONV(id, 10, 36)), 7, '0'))
+                WHERE cargo_code IS NULL OR cargo_code = ''
+                """);
+        jdbcTemplate.execute("""
+                UPDATE inbound_order_item
+                SET cargo_code_type = 'BAR_CODE'
+                WHERE cargo_code_type IS NULL OR cargo_code_type = ''
+                """);
+        jdbcTemplate.execute("""
+                UPDATE inbound_order_item
+                SET cargo_code_content = cargo_code
+                WHERE cargo_code IS NOT NULL
+                  AND cargo_code <> ''
+                  AND (cargo_code_content IS NULL OR cargo_code_content = '')
+                """);
+    }
+
+    private void shortenLegacyBarcodeCargoCodes() {
+        jdbcTemplate.execute("""
+                UPDATE cargo_code_record
+                JOIN inbound_order_item
+                  ON inbound_order_item.id = cargo_code_record.inbound_order_item_id
+                SET cargo_code_record.cargo_code = CONCAT('G', LPAD(UPPER(CONV(inbound_order_item.id, 10, 36)), 7, '0')),
+                    cargo_code_record.raw_content = CONCAT('G', LPAD(UPPER(CONV(inbound_order_item.id, 10, 36)), 7, '0')),
+                    cargo_code_record.svg_content = NULL,
+                    cargo_code_record.render_format = NULL,
+                    cargo_code_record.render_width = NULL,
+                    cargo_code_record.render_height = NULL
+                WHERE inbound_order_item.cargo_code REGEXP '^WMSG[0-9]{10,}'
+                  AND inbound_order_item.cargo_code_type = 'BAR_CODE'
+                  AND inbound_order_item.outbound_order_id IS NULL
+                """);
+        jdbcTemplate.execute("""
+                UPDATE inbound_order_item
+                SET cargo_code = CONCAT('G', LPAD(UPPER(CONV(id, 10, 36)), 7, '0')),
+                    cargo_code_content = CONCAT('G', LPAD(UPPER(CONV(id, 10, 36)), 7, '0'))
+                WHERE cargo_code REGEXP '^WMSG[0-9]{10,}'
+                  AND cargo_code_type = 'BAR_CODE'
+                  AND outbound_order_id IS NULL
+                """);
+    }
+
+    private void backfillCargoCodeRecords() {
+        jdbcTemplate.execute("""
+                INSERT INTO cargo_code_record (
+                  inbound_order_id,
+                  inbound_order_item_id,
+                  warehouse_id,
+                  product_id,
+                  operation_type,
+                  operation_code,
+                  location_id,
+                  location_code,
+                  location_name,
+                  zone_name,
+                  cargo_code,
+                  cargo_code_type,
+                  raw_content,
+                  status,
+                  remark,
+                  created_at,
+                  updated_at
+                )
+                SELECT
+                  inbound_order.id,
+                  inbound_order_item.id,
+                  inbound_order.warehouse_id,
+                  inbound_order_item.product_id,
+                  'INBOUND_PUTAWAY',
+                  inbound_order.order_no,
+                  inbound_order_item.location_id,
+                  base_location.location_code,
+                  base_location.location_name,
+                  base_location.zone_name,
+                  inbound_order_item.cargo_code,
+                  COALESCE(NULLIF(inbound_order_item.cargo_code_type, ''), 'BAR_CODE'),
+                  COALESCE(NULLIF(inbound_order_item.cargo_code_content, ''), inbound_order_item.cargo_code),
+                  'ACTIVE',
+                  '迁移补齐入库货物码',
+                  NOW(),
+                  NOW()
+                FROM inbound_order_item
+                JOIN inbound_order ON inbound_order.id = inbound_order_item.order_id
+                LEFT JOIN base_location ON base_location.id = inbound_order_item.location_id
+                LEFT JOIN cargo_code_record existing_record
+                  ON existing_record.inbound_order_item_id = inbound_order_item.id
+                 AND existing_record.cargo_code = inbound_order_item.cargo_code
+                WHERE inbound_order_item.cargo_code IS NOT NULL
+                  AND inbound_order_item.cargo_code <> ''
+                  AND existing_record.id IS NULL
+                """);
     }
 
     private void migrateNotificationTable() {

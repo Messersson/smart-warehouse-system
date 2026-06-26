@@ -28,6 +28,21 @@ public final class BusinessCodeGenerator {
 
     public static String cargoCode() {
         int sequence = SEQUENCE.updateAndGet(value -> value >= 999 ? 0 : value + 1);
-        return "WMSG" + ORDER_CODE_FORMATTER.format(LocalDateTime.now()) + String.format(Locale.ROOT, "%03d", sequence);
+        return "G" + Long.toString(System.currentTimeMillis(), 36).toUpperCase(Locale.ROOT)
+                + leftPad(Long.toString(sequence, 36).toUpperCase(Locale.ROOT), 2);
+    }
+
+    public static String cargoCode(Long itemId) {
+        if (itemId == null || itemId <= 0) {
+            return cargoCode();
+        }
+        return "G" + leftPad(Long.toString(itemId, 36).toUpperCase(Locale.ROOT), 7);
+    }
+
+    private static String leftPad(String value, int length) {
+        if (value.length() >= length) {
+            return value;
+        }
+        return "0".repeat(length - value.length()) + value;
     }
 }

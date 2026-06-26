@@ -96,6 +96,22 @@ class WmsApiClient(
         return post("/inbounds/scan-putaway", payload).asMap()
     }
 
+    suspend fun scanTransferOutbound(
+        rawContent: String,
+        scanFormat: String = "AUTO",
+        sourceDevice: String = "ANDROID_HANDHELD",
+        operatorName: String
+    ): JsonMap {
+        val payload = JSONObject()
+            .put("rawContent", rawContent)
+            .put("scanFormat", scanFormat)
+            .put("sourceDevice", sourceDevice)
+            .put("operatorName", operatorName)
+            .put("scannerInterface", "ANDROID_CAMERA")
+            .put("remark", "手持扫码枪从入库货物转出库")
+        return post("/outbounds/scan-transfer", payload).asMap()
+    }
+
     suspend fun pickupAction(
         id: Long,
         action: String,

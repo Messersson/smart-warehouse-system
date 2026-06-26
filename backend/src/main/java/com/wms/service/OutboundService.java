@@ -9,6 +9,7 @@ import com.wms.dto.OutboundOrderRequest;
 import com.wms.dto.OutboundScanRequest;
 import com.wms.entity.CargoCodeRecord;
 import com.wms.entity.Customer;
+import com.wms.entity.InboundOrder;
 import com.wms.entity.InboundOrderItem;
 import com.wms.entity.OutboundOrder;
 import com.wms.entity.OutboundOrderItem;
@@ -18,6 +19,7 @@ import com.wms.entity.Warehouse;
 import com.wms.repository.CargoCodeRecordRepository;
 import com.wms.repository.CustomerRepository;
 import com.wms.repository.InboundOrderItemRepository;
+import com.wms.repository.InboundOrderRepository;
 import com.wms.repository.OutboundOrderItemRepository;
 import com.wms.repository.OutboundOrderRepository;
 import com.wms.repository.ProductRepository;
@@ -64,6 +66,7 @@ public class OutboundService {
 
     private final OutboundOrderRepository outboundOrderRepository;
     private final OutboundOrderItemRepository outboundOrderItemRepository;
+    private final InboundOrderRepository inboundOrderRepository;
     private final InboundOrderItemRepository inboundOrderItemRepository;
     private final CargoCodeRecordRepository cargoCodeRecordRepository;
     private final ProductRepository productRepository;
@@ -213,6 +216,91 @@ public class OutboundService {
         return detail(id);
     }
 
+    @Transactional
+    public Map<String, Object> scanTransfer(OutboundScanRequest request) {
+        String rawContent = request == null ? "" : defaultText(request.getRawContent(), "");
+        ScannedInboundCargo scannedCargo = extractScanCandidates(rawContent).stream()
+                .map(this::tryResolveScannedInboundCargo)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("未找到可转出库的入库货物: " + rawContent));
+
+        InboundOrderItem inboundItem = scannedCargo.inboundItem();
+        if (inboundItem.getOutboundOrderId() != null) {
+            Map<String, Object> data = detail(inboundItem.getOutboundOrderId());
+            data.put("message", "该货物已转入出库单 " + inboundItem.getOutboundOrderNo());
+            return data;
+        }
+
+        InboundOrder inboundOrder = inboundOrderRepository.findById(inboundItem.getOrderId())
+                .orElseThrow(() -> new BusinessException("入库货物所属入库单不存在"));
+        Product product = scannedCargo.product();
+        BigDecimal transferQty = transferQuantity(inboundItem);
+        String operatorName = defaultText(request == null ? null : request.getOperatorName(), "系统管理员");
+        String outboundNo = BusinessCodeGenerator.unifiedOrderCode(null);
+
+        OutboundOrder outboundOrder = new OutboundOrder();
+        outboundOrder.setOrderNo(outboundNo);
+        outboundOrder.setWarehouseId(inboundOrder.getWarehouseId());
+        outboundOrder.setCustomerId(inboundOrder.getCustomerId());
+        outboundOrder.setOwnerId(inboundOrder.getOwnerId());
+        outboundOrder.setOrderType("SCAN_TRANSFER");
+        outboundOrder.setStatus("SHIPPED");
+        outboundOrder.setSourceNo(inboundOrder.getOrderNo());
+        outboundOrder.setPriorityLevel("NORMAL");
+        outboundOrder.setPlannedShipTime(LocalDateTime.now());
+        outboundOrder.setPickingCompletedAt(LocalDateTime.now());
+        outboundOrder.setShippedAt(LocalDateTime.now());
+        outboundOrder.setTotalPlannedQty(transferQty);
+        outboundOrder.setTotalShippedQty(transferQty);
+        outboundOrder.setOperatorName(operatorName);
+        outboundOrder.setLogisticsNo(defaultText(scannedCargo.scanCode(), outboundNo));
+        outboundOrder.setRemark("扫码从入库单 " + inboundOrder.getOrderNo() + " 转出");
+        OutboundOrder savedOrder = outboundOrderRepository.save(outboundOrder);
+
+        OutboundOrderItem outboundItem = new OutboundOrderItem();
+        outboundItem.setOrderId(savedOrder.getId());
+        outboundItem.setProductId(product.getId());
+        outboundItem.setSkuCode(product.getSkuCode());
+        outboundItem.setProductName(product.getProductName());
+        outboundItem.setBatchNo(inboundItem.getBatchNo());
+        outboundItem.setPlannedQty(transferQty);
+        outboundItem.setShippedQty(transferQty);
+        outboundItem.setLocationId(inboundItem.getLocationId());
+        outboundItem.setRemark("由入库货物码转出: " + scannedCargo.scanCode());
+        OutboundOrderItem savedItem = outboundOrderItemRepository.save(outboundItem);
+
+        if ("PUTAWAY_COMPLETED".equals(inboundOrder.getStatus())) {
+            stockService.decreaseStockForOutbound(savedOrder, savedItem);
+        }
+
+        inboundItem.setPutawayScanConfirmed(true);
+        if (inboundItem.getPutawayScanConfirmedAt() == null) {
+            inboundItem.setPutawayScanConfirmedAt(LocalDateTime.now());
+        }
+        inboundItem.setPutawayScanOperator(operatorName);
+        inboundItem.setOutboundOrderId(savedOrder.getId());
+        inboundItem.setOutboundOrderNo(savedOrder.getOrderNo());
+        inboundItem.setOutboundTransferredAt(LocalDateTime.now());
+        inboundOrderItemRepository.save(inboundItem);
+
+        boolean allTransferred = inboundOrderItemRepository.findByOrderIdOrderByIdAsc(inboundOrder.getId()).stream()
+                .allMatch(item -> item.getOutboundOrderId() != null);
+        if (allTransferred) {
+            inboundOrder.setPickupStatus("PICKED_UP");
+            inboundOrderRepository.save(inboundOrder);
+        }
+
+        saveScanRecord(savedOrder, savedItem, product, rawContent, scannedCargo.scanCode(), scannedCargo.codeType(), request);
+        Map<String, Object> data = detail(savedOrder.getId());
+        data.put("sourceInboundOrderId", inboundOrder.getId());
+        data.put("sourceInboundOrderNo", inboundOrder.getOrderNo());
+        data.put("sourceInboundItemId", inboundItem.getId());
+        data.put("message", "货物已从入库单转入出库单并完成出库");
+        return data;
+    }
+
     private Optional<ScannedProduct> tryResolveScannedProduct(String scanCode) {
         Optional<CargoCodeRecord> cargoCodeRecord = cargoCodeRecordRepository.findFirstByCargoCodeOrderByIdDesc(scanCode)
                 .or(() -> cargoCodeRecordRepository.findFirstByRawContentOrderByIdDesc(scanCode));
@@ -238,6 +326,50 @@ public class OutboundService {
 
         return productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(scanCode, scanCode)
                 .map(product -> new ScannedProduct(product, "PRODUCT", scanCode));
+    }
+
+    private Optional<ScannedInboundCargo> tryResolveScannedInboundCargo(String scanCode) {
+        Optional<CargoCodeRecord> cargoCodeRecord = cargoCodeRecordRepository.findFirstByCargoCodeOrderByIdDesc(scanCode)
+                .or(() -> cargoCodeRecordRepository.findFirstByRawContentOrderByIdDesc(scanCode));
+        if (cargoCodeRecord.isPresent()) {
+            CargoCodeRecord record = cargoCodeRecord.get();
+            InboundOrderItem item = inboundOrderItemRepository.findById(record.getInboundOrderItemId())
+                    .orElseThrow(() -> new BusinessException("货物码已识别，但入库明细不存在: " + scanCode));
+            Product product = resolveProduct(item, scanCode);
+            return Optional.of(new ScannedInboundCargo(item, product, "CARGO_CODE", record.getCargoCode()));
+        }
+
+        Optional<InboundOrderItem> inboundItem = inboundOrderItemRepository.findFirstByCargoCodeOrExternalCodeOrderByIdDesc(scanCode, scanCode)
+                .or(() -> inboundOrderItemRepository.findFirstByCargoCodeContentOrderByIdDesc(scanCode));
+        if (inboundItem.isPresent()) {
+            InboundOrderItem item = inboundItem.get();
+            Product product = resolveProduct(item, scanCode);
+            return Optional.of(new ScannedInboundCargo(item, product, "CARGO_CODE", scanCode));
+        }
+
+        return productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(scanCode, scanCode)
+                .flatMap(product -> inboundOrderItemRepository
+                        .findByProductIdAndOutboundOrderIdIsNullOrderByIdDesc(product.getId())
+                        .stream()
+                        .findFirst()
+                        .map(item -> new ScannedInboundCargo(item, product, "PRODUCT", scanCode)));
+    }
+
+    private Product resolveProduct(InboundOrderItem item, String scanCode) {
+        return productRepository.findById(item.getProductId())
+                .orElseGet(() -> productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(item.getSkuCode(), item.getSkuCode())
+                        .orElseThrow(() -> new BusinessException("货物码已识别，但商品档案不存在: " + scanCode)));
+    }
+
+    private BigDecimal transferQuantity(InboundOrderItem item) {
+        BigDecimal quantity = defaultQty(item.getQualifiedQty());
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            quantity = defaultQty(item.getActualQty());
+        }
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            quantity = defaultQty(item.getExpectedQty());
+        }
+        return quantity.compareTo(BigDecimal.ZERO) <= 0 ? BigDecimal.ONE : quantity;
     }
 
     private void saveItems(OutboundOrder order, List<OutboundOrderItemRequest> items) {
@@ -492,5 +624,8 @@ public class OutboundService {
     }
 
     private record ScannedProduct(Product product, String codeType, String scanCode) {
+    }
+
+    private record ScannedInboundCargo(InboundOrderItem inboundItem, Product product, String codeType, String scanCode) {
     }
 }
