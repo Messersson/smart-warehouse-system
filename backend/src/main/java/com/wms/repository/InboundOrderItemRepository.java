@@ -12,6 +12,8 @@ public interface InboundOrderItemRepository extends JpaRepository<InboundOrderIt
 
     List<InboundOrderItem> findByProductIdAndOutboundOrderIdIsNullOrderByIdDesc(Long productId);
 
+    List<InboundOrderItem> findByProductIdAndPutawayScanConfirmedTrueAndOutboundOrderIdIsNullOrderByIdDesc(Long productId);
+
     Optional<InboundOrderItem> findFirstByCargoCodeOrExternalCodeOrderByIdDesc(String cargoCode, String externalCode);
 
     Optional<InboundOrderItem> findFirstByCargoCodeContentOrderByIdDesc(String cargoCodeContent);

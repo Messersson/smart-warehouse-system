@@ -10,6 +10,29 @@
       </div>
     </div>
 
+    <div class="direct-transfer-panel">
+      <el-select v-model="directTransferFormat" class="direct-transfer-format" size="small">
+        <el-option label="自动识别" value="AUTO" />
+        <el-option label="条形码" value="BAR_CODE" />
+        <el-option label="二维码" value="QR_CODE" />
+      </el-select>
+      <el-input
+        ref="directTransferInput"
+        v-model="directTransferCode"
+        size="small"
+        placeholder="商品条形码 / SKU / 货物码"
+        @keyup.enter.native="submitDirectTransfer"
+      />
+      <el-button
+        type="success"
+        size="small"
+        :loading="directTransferLoading"
+        @click="submitDirectTransfer"
+      >
+        直接出库
+      </el-button>
+    </div>
+
     <el-table :data="rows" stripe border>
       <el-table-column prop="orderNo" label="作业编码" min-width="170" />
       <el-table-column prop="warehouseName" label="仓库" min-width="120" />
@@ -258,6 +281,9 @@ export default {
       scanShipFormat: 'AUTO',
       scanShipLoading: false,
       shipLoading: false,
+      directTransferCode: '',
+      directTransferFormat: 'AUTO',
+      directTransferLoading: false,
       quickCreateVisible: false,
       quickCreateResource: '',
       quickCreateTarget: null,
@@ -296,6 +322,9 @@ export default {
   async created() {
     await Promise.all([this.fetchRows(), this.fetchLookups()])
   },
+  mounted() {
+    this.focusDirectTransferInput()
+  },
   methods: {
     async fetchRows() {
       const response = await get('/outbounds')
@@ -304,6 +333,41 @@ export default {
     async fetchLookups() {
       const response = await get('/lookups', { _ts: Date.now() })
       this.lookups = response.data || {}
+    },
+    focusDirectTransferInput() {
+      this.$nextTick(() => {
+        if (this.$refs.directTransferInput) {
+          this.$refs.directTransferInput.focus()
+        }
+      })
+    },
+    async submitDirectTransfer() {
+      const rawContent = this.directTransferCode.trim()
+      if (!rawContent) {
+        this.$message.error('请先扫描商品条形码、SKU 或货物码')
+        this.focusDirectTransferInput()
+        return
+      }
+      try {
+        this.directTransferLoading = true
+        const response = await post('/outbounds/scan-transfer', {
+          rawContent,
+          scanFormat: this.directTransferFormat,
+          sourceDevice: 'WEB_OUTBOUND_DIRECT',
+          scannerInterface: 'WIRED_SCANNER',
+          scannerDeviceId: 'WEB_OUTBOUND_DIRECT',
+          operatorName: '系统管理员'
+        })
+        const data = response.data || {}
+        this.directTransferCode = ''
+        this.$message.success(data.message || response.message || '已直接转入出库单')
+        await this.fetchRows()
+      } catch (error) {
+        this.$message.error(error.message || '直接出库失败')
+      } finally {
+        this.directTransferLoading = false
+        this.focusDirectTransferInput()
+      }
     },
     async openCreate() {
       await this.fetchLookups()
@@ -484,6 +548,18 @@ export default {
   gap: 14px;
 }
 
+.direct-transfer-panel {
+  display: grid;
+  grid-template-columns: 120px minmax(220px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.direct-transfer-format {
+  width: 120px;
+}
+
 .scan-ship-bar {
   display: grid;
   grid-template-columns: 140px 1fr auto;
@@ -509,6 +585,14 @@ export default {
 }
 
 @media (max-width: 760px) {
+  .direct-transfer-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .direct-transfer-format {
+    width: 100%;
+  }
+
   .scan-ship-bar {
     grid-template-columns: 1fr;
   }

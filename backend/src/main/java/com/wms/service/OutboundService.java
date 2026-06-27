@@ -232,6 +232,9 @@ public class OutboundService {
             data.put("message", "该货物已转入出库单 " + inboundItem.getOutboundOrderNo());
             return data;
         }
+        if (!Boolean.TRUE.equals(inboundItem.getPutawayScanConfirmed())) {
+            throw new BusinessException("该货物尚未扫码确认入库，不能直接出库: " + scannedCargo.scanCode());
+        }
 
         InboundOrder inboundOrder = inboundOrderRepository.findById(inboundItem.getOrderId())
                 .orElseThrow(() -> new BusinessException("入库货物所属入库单不存在"));
@@ -349,7 +352,7 @@ public class OutboundService {
 
         return productRepository.findFirstBySkuCodeOrBarcodeOrderByIdAsc(scanCode, scanCode)
                 .flatMap(product -> inboundOrderItemRepository
-                        .findByProductIdAndOutboundOrderIdIsNullOrderByIdDesc(product.getId())
+                        .findByProductIdAndPutawayScanConfirmedTrueAndOutboundOrderIdIsNullOrderByIdDesc(product.getId())
                         .stream()
                         .findFirst()
                         .map(item -> new ScannedInboundCargo(item, product, "PRODUCT", scanCode)));

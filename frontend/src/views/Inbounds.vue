@@ -282,6 +282,12 @@
           :disabled="cargoCodeItem.putawayScanConfirmed"
           @click="confirmCargoCodeScan(cargoCodeRawContent(cargoCodeItem))"
         >扫码确认入库</el-button>
+        <el-button
+          type="success"
+          :loading="cargoTransferLoading"
+          :disabled="!cargoCodeItem.putawayScanConfirmed || !!cargoCodeItem.outboundOrderId"
+          @click="transferCargoCodeToOutbound(cargoCodeRawContent(cargoCodeItem))"
+        >直接出库</el-button>
         <el-button type="primary" :loading="cargoCodeRenderLoading" :disabled="!cargoCodeSvg" @click="printCargoCodeLabel">打印标签</el-button>
       </span>
     </el-dialog>
@@ -446,6 +452,7 @@ export default {
       cargoCodeRenderLoading: false,
       cargoCodeRenderError: '',
       cargoScanConfirming: false,
+      cargoTransferLoading: false,
       cargoCodeRecordsVisible: false,
       cargoCodeRecordsLoading: false,
       cargoCodeRecords: [],
@@ -660,7 +667,7 @@ export default {
       }
     },
     handleCargoScannerKeydown(event) {
-      if (!this.cargoCodeVisible || this.cargoScanConfirming) {
+      if (!this.cargoCodeVisible || this.cargoScanConfirming || this.cargoTransferLoading) {
         return
       }
       if (event.ctrlKey || event.altKey || event.metaKey) {
@@ -695,7 +702,11 @@ export default {
       if (scannedCode.length < 4) {
         return
       }
-      this.confirmCargoCodeScan(scannedCode)
+      if (this.cargoCodeItem && this.cargoCodeItem.putawayScanConfirmed) {
+        this.transferCargoCodeToOutbound(scannedCode)
+      } else {
+        this.confirmCargoCodeScan(scannedCode)
+      }
     },
     async confirmCargoCodeScan(rawContent) {
       const scanContent = (rawContent || '').trim()
@@ -740,6 +751,56 @@ export default {
         this.$message.error(error.message || '扫码确认入库失败')
       } finally {
         this.cargoScanConfirming = false
+      }
+    },
+    async transferCargoCodeToOutbound(rawContent) {
+      const scanContent = (rawContent || '').trim()
+      if (!scanContent) {
+        this.$message.error('请先扫描商品条形码、SKU 或货物码')
+        return
+      }
+      if (!this.cargoCodeItem.putawayScanConfirmed) {
+        this.$message.error('请先扫码确认入库')
+        return
+      }
+      if (this.cargoCodeItem.outboundOrderId) {
+        this.$message.warning(`该货物已转入出库单 ${this.cargoCodeItem.outboundOrderNo || ''}`)
+        return
+      }
+      try {
+        this.cargoTransferLoading = true
+        const response = await post('/outbounds/scan-transfer', {
+          rawContent: scanContent,
+          scanFormat: this.cargoCodeItem.cargoCodeType || 'AUTO',
+          sourceDevice: 'WEB_INBOUND_LABEL',
+          scannerInterface: 'WIRED_SCANNER',
+          scannerDeviceId: 'WEB_LABEL_PREVIEW',
+          operatorName: '系统管理员'
+        })
+        const data = response.data || {}
+        const transferredItemId = this.cargoCodeItem.id
+        this.cargoCodeItem = {
+          ...this.cargoCodeItem,
+          outboundOrderId: data.id,
+          outboundOrderNo: data.orderNo || data.code,
+          outboundTransferredAt: data.shippedAt || null
+        }
+        if (this.currentRow && Array.isArray(this.currentRow.items)) {
+          this.currentRow = {
+            ...this.currentRow,
+            items: this.currentRow.items.filter(item => item.id !== transferredItemId)
+          }
+        }
+        this.$message.success(data.message || response.message || '已直接转入出库单')
+        await Promise.all([
+          this.fetchRows(),
+          this.cargoCodeRecordsVisible ? this.fetchCargoCodeRecords() : Promise.resolve()
+        ])
+        this.cargoCodeVisible = false
+      } catch (error) {
+        this.$message.error(error.message || '直接出库失败')
+      } finally {
+        this.cargoTransferLoading = false
       }
     },
     cargoCodeRawContent(row) {
