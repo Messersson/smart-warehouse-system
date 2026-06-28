@@ -12,6 +12,6 @@ export function put(url, data) {
   return http.put(url, data)
 }
 
-export function remove(url) {
-  return http.delete(url)
+export function remove(url, params) {
+  return http.delete(url, { params })
 }

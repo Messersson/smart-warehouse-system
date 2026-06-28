@@ -117,7 +117,8 @@ public class OutboundService {
         order.setTotalShippedQty(BigDecimal.ZERO);
 
         OutboundOrder savedOrder = outboundOrderRepository.save(order);
-        saveItems(savedOrder, request.getItems());
+        List<OutboundOrderItem> savedItems = saveItems(savedOrder, request.getItems());
+        savedItems.forEach(item -> stockService.lockStockForOutbound(savedOrder, item));
 
         return detail(savedOrder.getId());
     }
@@ -375,8 +376,8 @@ public class OutboundService {
         return quantity.compareTo(BigDecimal.ZERO) <= 0 ? BigDecimal.ONE : quantity;
     }
 
-    private void saveItems(OutboundOrder order, List<OutboundOrderItemRequest> items) {
-        items.forEach(itemRequest -> {
+    private List<OutboundOrderItem> saveItems(OutboundOrder order, List<OutboundOrderItemRequest> items) {
+        return items.stream().map(itemRequest -> {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new BusinessException("商品不存在，productId=" + itemRequest.getProductId()));
 
@@ -390,8 +391,8 @@ public class OutboundService {
             item.setShippedQty(BigDecimal.ZERO);
             item.setLocationId(itemRequest.getLocationId());
             item.setRemark(itemRequest.getRemark());
-            outboundOrderItemRepository.save(item);
-        });
+            return outboundOrderItemRepository.save(item);
+        }).toList();
     }
 
     private Map<String, Object> toOrderView(OutboundOrder order, Map<Long, Warehouse> warehouseMap, Map<Long, Customer> customerMap) {

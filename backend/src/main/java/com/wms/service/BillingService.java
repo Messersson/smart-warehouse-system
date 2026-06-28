@@ -70,6 +70,10 @@ public class BillingService {
 
     @Transactional
     public BillingContract saveContract(BillingContract contract) {
+        requireNotNull(contract.getCustomerId(), "Customer is required");
+        requireText(contract.getContractNo(), "Contract number is required");
+        requireText(contract.getContractName(), "Contract name is required");
+        requireNotNull(contract.getEffectiveDate(), "Effective date is required");
         if (contract.getSettlementCycle() == null || contract.getSettlementCycle().isBlank()) {
             contract.setSettlementCycle("MONTHLY");
         }
@@ -85,6 +89,10 @@ public class BillingService {
 
     @Transactional
     public BillingRule saveRule(BillingRule rule) {
+        requireNotNull(rule.getContractId(), "Billing contract is required");
+        requireText(rule.getChargeType(), "Charge type is required");
+        requireText(rule.getRuleName(), "Rule name is required");
+        requireText(rule.getUnitName(), "Unit name is required");
         if (rule.getStatus() == null || rule.getStatus().isBlank()) {
             rule.setStatus("ACTIVE");
         }
@@ -251,6 +259,18 @@ public class BillingService {
 
     private BigDecimal defaultQty(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private void requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new BusinessException(message);
+        }
+    }
+
+    private void requireNotNull(Object value, String message) {
+        if (value == null) {
+            throw new BusinessException(message);
+        }
     }
 
     private void preserveAuditFields(BaseEntity target, BaseEntity existing) {

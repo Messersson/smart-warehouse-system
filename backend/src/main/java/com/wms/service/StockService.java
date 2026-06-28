@@ -89,6 +89,20 @@ public class StockService {
                 .toList();
     }
 
+    public List<Map<String, Object>> listMovements(Long stockId) {
+        Stock stock = stockRepository.findById(stockId)
+                .orElseThrow(() -> new BusinessException("Stock not found"));
+        return inventoryMovementRepository.findStockMovements(
+                        stock.getWarehouseId(),
+                        stock.getOwnerId(),
+                        stock.getProductId(),
+                        stock.getLocationId(),
+                        normalizeBatchNo(stock.getBatchNo())
+                ).stream()
+                .map(this::toMovementView)
+                .toList();
+    }
+
     public Long resolveInboundLocation(Long warehouseId, BigDecimal requiredQty) {
         List<Location> locations = locationRepository.findByWarehouseIdAndStatusOrderByLocationCodeAsc(warehouseId, "ACTIVE");
         return locations.stream()
@@ -136,21 +150,24 @@ public class StockService {
             return;
         }
 
-        List<Stock> stocks = selectStocksForConsume(order.getWarehouseId(), order.getOwnerId(), item.getProductId());
+        List<Stock> stocks = selectStocksForConsume(order.getWarehouseId(), order.getOwnerId(), item.getProductId(), item.getLocationId(), item.getBatchNo());
         BigDecimal remaining = requiredQty;
 
         for (Stock stock : stocks) {
             if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
                 break;
             }
+            BigDecimal lockedQty = defaultQty(stock.getLockedQty());
             BigDecimal availableQty = defaultQty(stock.getAvailableQty());
-            if (availableQty.compareTo(BigDecimal.ZERO) <= 0) {
+            BigDecimal consumableQty = lockedQty.compareTo(BigDecimal.ZERO) > 0 ? lockedQty : availableQty;
+            if (consumableQty.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
 
-            BigDecimal consumeQty = availableQty.min(remaining);
+            BigDecimal consumeQty = consumableQty.min(remaining);
             BigDecimal beforeQty = defaultQty(stock.getQuantity());
             stock.setQuantity(beforeQty.subtract(consumeQty));
+            stock.setLockedQty(defaultQty(stock.getLockedQty()).subtract(consumeQty).max(BigDecimal.ZERO));
             stock.setAvailableQty(stock.getQuantity().subtract(defaultQty(stock.getLockedQty())));
             stock.setLastOutboundAt(LocalDateTime.now());
             stock.setLastMovementAt(LocalDateTime.now());
@@ -163,6 +180,38 @@ public class StockService {
 
         if (remaining.compareTo(BigDecimal.ZERO) > 0) {
             throw new BusinessException("Insufficient stock for productId=" + item.getProductId());
+        }
+    }
+
+    @Transactional
+    public void lockStockForOutbound(OutboundOrder order, OutboundOrderItem item) {
+        BigDecimal requiredQty = defaultQty(item.getPlannedQty());
+        if (requiredQty.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        List<Stock> stocks = selectStocksForConsume(order.getWarehouseId(), order.getOwnerId(), item.getProductId(), item.getLocationId(), item.getBatchNo());
+        BigDecimal remaining = requiredQty;
+
+        for (Stock stock : stocks) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+            BigDecimal availableQty = defaultQty(stock.getAvailableQty());
+            if (availableQty.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+
+            BigDecimal lockQty = availableQty.min(remaining);
+            stock.setLockedQty(defaultQty(stock.getLockedQty()).add(lockQty));
+            stock.setAvailableQty(defaultQty(stock.getQuantity()).subtract(defaultQty(stock.getLockedQty())));
+            stock.setLastMovementAt(LocalDateTime.now());
+            stockRepository.save(stock);
+            remaining = remaining.subtract(lockQty);
+        }
+
+        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException("Insufficient available stock for productId=" + item.getProductId());
         }
     }
 
@@ -243,6 +292,13 @@ public class StockService {
         );
     }
 
+    private List<Stock> selectStocksForConsume(Long warehouseId, Long ownerId, Long productId, Long locationId, String batchNo) {
+        return selectStocksForConsume(warehouseId, ownerId, productId).stream()
+                .filter(stock -> locationId == null || Objects.equals(stock.getLocationId(), locationId))
+                .filter(stock -> !StringUtils.hasText(batchNo) || Objects.equals(normalizeBatchNo(stock.getBatchNo()), normalizeBatchNo(batchNo)))
+                .toList();
+    }
+
     private Stock createEmptyStock(Long warehouseId, Long ownerId, Long productId, Long locationId, String batchNo) {
         Stock stock = new Stock();
         stock.setWarehouseId(warehouseId);
@@ -292,5 +348,25 @@ public class StockService {
 
     private BigDecimal defaultQty(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private Map<String, Object> toMovementView(InventoryMovement movement) {
+        Map<String, Object> item = new HashMap<>();
+        item.put("id", movement.getId());
+        item.put("movementType", movement.getMovementType());
+        item.put("sourceType", movement.getSourceType());
+        item.put("sourceId", movement.getSourceId());
+        item.put("sourceNo", movement.getSourceNo());
+        item.put("beforeQty", movement.getBeforeQty());
+        item.put("changeQty", movement.getChangeQty());
+        item.put("afterQty", movement.getAfterQty());
+        item.put("operatorName", movement.getOperatorName());
+        item.put("remark", movement.getRemark());
+        item.put("createdAt", movement.getCreatedAt());
+        return item;
+    }
+
+    private static String normalizeBatchNo(String batchNo) {
+        return StringUtils.hasText(batchNo) ? batchNo.trim() : "";
     }
 }

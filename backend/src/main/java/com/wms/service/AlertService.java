@@ -61,21 +61,44 @@ public class AlertService {
         return toView(alertEventRepository.save(event));
     }
 
-    @Scheduled(fixedDelayString = "${app.alert.scan-fixed-delay-ms:300000}")
     @Transactional
-    public void scanAlerts() {
-        try {
-            Map<String, AlertRule> rules = alertRuleRepository.findByEnabledTrueOrderByIdAsc().stream()
-                    .collect(Collectors.toMap(AlertRule::getRuleCode, Function.identity()));
+    public Map<String, Object> scanAlerts() {
+        Map<String, AlertRule> rules = alertRuleRepository.findByEnabledTrueOrderByIdAsc().stream()
+                .collect(Collectors.toMap(AlertRule::getRuleCode, Function.identity()));
 
-            scanInboundReceiveTimeout(rules.get("INBOUND_RECEIVE_TIMEOUT"));
-            scanInboundPutawayTimeout(rules.get("INBOUND_PUTAWAY_TIMEOUT"));
-            scanOutboundShipTimeout(rules.get("OUTBOUND_SHIP_TIMEOUT"));
-            scanStagnantStock(rules.get("STOCK_STAGNANT"));
-            scanWarehousePickupDwell();
+        scanInboundReceiveTimeout(rules.get("INBOUND_RECEIVE_TIMEOUT"));
+        scanInboundPutawayTimeout(rules.get("INBOUND_PUTAWAY_TIMEOUT"));
+        scanOutboundShipTimeout(rules.get("OUTBOUND_SHIP_TIMEOUT"));
+        scanStagnantStock(rules.get("STOCK_STAGNANT"));
+        scanWarehousePickupDwell();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("enabledRuleCount", rules.size());
+        result.put("openCount", alertEventRepository.countByStatus("OPEN"));
+        result.put("acknowledgedCount", alertEventRepository.countByStatus("ACKNOWLEDGED"));
+        result.put("resolvedCount", alertEventRepository.countByStatus("RESOLVED"));
+        result.put("scannedAt", LocalDateTime.now());
+        return result;
+    }
+
+    @Scheduled(fixedDelayString = "${app.alert.scan-fixed-delay-ms:300000}")
+    public void scheduledScanAlerts() {
+        try {
+            scanAlerts();
         } catch (Exception ex) {
             log.error("alert scan failed", ex);
         }
+    }
+
+    @Transactional
+    public Map<String, Object> deleteHistory(String period) {
+        LocalDateTime cutoffTime = LocalDateTime.now().minusDays(resolveDeleteDays(period));
+        long deletedCount = alertEventRepository.deleteByLastTriggeredAtBefore(cutoffTime);
+        Map<String, Object> result = new HashMap<>();
+        result.put("period", period);
+        result.put("cutoffTime", cutoffTime);
+        result.put("deletedCount", deletedCount);
+        return result;
     }
 
     private void scanInboundReceiveTimeout(AlertRule rule) {
@@ -300,5 +323,16 @@ public class AlertService {
 
     private BigDecimal defaultQty(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private int resolveDeleteDays(String period) {
+        String normalizedPeriod = period == null ? "" : period.trim().toUpperCase();
+        return switch (normalizedPeriod) {
+            case "ONE_WEEK", "WEEK", "7D" -> 7;
+            case "ONE_MONTH", "MONTH", "1M" -> 30;
+            case "THREE_MONTHS", "THREE_MONTH", "3M" -> 90;
+            case "ONE_YEAR", "YEAR", "1Y" -> 365;
+            default -> throw new BusinessException("不支持的删除周期: " + period);
+        };
     }
 }

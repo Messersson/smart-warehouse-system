@@ -29,7 +29,7 @@
           <el-button type="text" @click="assign(scope.row)">指派</el-button>
           <el-button type="text" @click="resolve(scope.row)" :disabled="scope.row.status === 'RESOLVED' || scope.row.status === 'CLOSED'">解决</el-button>
           <el-button type="text" @click="close(scope.row)" :disabled="scope.row.status === 'CLOSED'">关闭</el-button>
-          <el-button type="text" @click="submitApproval(scope.row)" :disabled="scope.row.approvalStatus === 'PENDING'">提交审批</el-button>
+          <el-button type="text" @click="submitApproval(scope.row)" :disabled="!canSubmitApproval(scope.row)">提交审批</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -37,7 +37,7 @@
     <el-dialog title="新建异常工单" :visible.sync="dialogVisible" width="760px">
       <el-form :model="form" label-width="120px">
         <el-form-item label="所属仓库">
-          <el-select v-model="form.warehouseId" clearable style="width: 100%">
+          <el-select v-model="form.warehouseId" style="width: 100%">
             <el-option v-for="item in lookups.warehouses || []" :key="item.id" :label="item.warehouseName" :value="item.id" />
           </el-select>
         </el-form-item>
@@ -110,6 +110,9 @@ export default {
       const map = { NOT_SUBMITTED: '未提交', PENDING: '审批中', APPROVED: '已通过', REJECTED: '已驳回' }
       return map[status] || status
     },
+    canSubmitApproval(row) {
+      return row.approvalStatus === 'NOT_SUBMITTED' || row.approvalStatus === 'REJECTED'
+    },
     async fetchRows() {
       const response = await get('/exceptions')
       this.rows = response.data || []
@@ -124,6 +127,14 @@ export default {
       this.dialogVisible = true
     },
     async create() {
+      if (!this.form.warehouseId) {
+        this.$message.error('请选择所属仓库')
+        return
+      }
+      if (!this.form.ticketTitle || !this.form.ticketTitle.trim()) {
+        this.$message.error('请输入工单标题')
+        return
+      }
       await post('/exceptions', this.form)
       this.$message.success('异常工单创建成功')
       this.dialogVisible = false

@@ -6,6 +6,18 @@
         <div style="color: #64748b; margin-top: 6px">{{ labels.subtitle }}</div>
       </div>
       <div>
+        <el-button :loading="scanLoading" @click="scanNow">{{ labels.scanNow }}</el-button>
+        <el-dropdown trigger="click" @command="deleteHistory">
+          <el-button type="danger" plain :loading="deleteLoading">
+            {{ labels.deleteHistory }}<i class="el-icon-arrow-down el-icon--right"></i>
+          </el-button>
+          <el-dropdown-menu slot="dropdown">
+            <el-dropdown-item command="ONE_WEEK">{{ labels.deleteOneWeek }}</el-dropdown-item>
+            <el-dropdown-item command="ONE_MONTH">{{ labels.deleteOneMonth }}</el-dropdown-item>
+            <el-dropdown-item command="THREE_MONTHS">{{ labels.deleteThreeMonths }}</el-dropdown-item>
+            <el-dropdown-item command="ONE_YEAR">{{ labels.deleteOneYear }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
         <el-button @click="fetchRows">{{ labels.refresh }}</el-button>
       </div>
     </div>
@@ -54,12 +66,18 @@
 </template>
 
 <script>
-import { get, post } from '../api'
+import { get, post, remove } from '../api'
 
 const labels = {
   title: '预警中心',
   subtitle: '聚焦入库滞留、出库超时、库存呆滞和客户取件超时等风险。',
   refresh: '刷新',
+  scanNow: '立即扫描',
+  deleteHistory: '删除记录',
+  deleteOneWeek: '删除超过一周',
+  deleteOneMonth: '删除超过一个月',
+  deleteThreeMonths: '删除超过三个月',
+  deleteOneYear: '删除超过一年',
   ruleName: '预警规则',
   severity: '等级',
   status: '状态',
@@ -71,7 +89,11 @@ const labels = {
   acknowledge: '确认处理',
   loadFailed: '预警加载失败',
   ackSuccess: '已确认处理',
-  ackFailed: '处理失败'
+  ackFailed: '处理失败',
+  scanSuccess: '预警扫描完成',
+  scanFailed: '预警扫描失败',
+  deleteSuccess: '历史记录已删除',
+  deleteFailed: '删除历史记录失败'
 }
 
 export default {
@@ -79,7 +101,9 @@ export default {
   data() {
     return {
       labels,
-      rows: []
+      rows: [],
+      scanLoading: false,
+      deleteLoading: false
     }
   },
   async created() {
@@ -104,6 +128,52 @@ export default {
       } catch (error) {
         this.$message.error(error.message || labels.ackFailed)
       }
+    },
+    async scanNow() {
+      try {
+        this.scanLoading = true
+        const response = await post('/alerts/scan')
+        const data = response.data || {}
+        this.$message.success(`${labels.scanSuccess}，当前待处理 ${data.openCount || 0} 条`)
+        await this.fetchRows()
+      } catch (error) {
+        this.$message.error(error.message || labels.scanFailed)
+      } finally {
+        this.scanLoading = false
+      }
+    },
+    async deleteHistory(period) {
+      const text = this.deletePeriodText(period)
+      try {
+        await this.$confirm(`确定删除${text}的预警记录吗？删除后不可恢复。`, '删除确认', {
+          confirmButtonText: '删除',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+      } catch (error) {
+        return
+      }
+
+      try {
+        this.deleteLoading = true
+        const response = await remove('/alerts/history', { period })
+        const data = response.data || {}
+        this.$message.success(`${labels.deleteSuccess}，共删除 ${data.deletedCount || 0} 条`)
+        await this.fetchRows()
+      } catch (error) {
+        this.$message.error(error.message || labels.deleteFailed)
+      } finally {
+        this.deleteLoading = false
+      }
+    },
+    deletePeriodText(period) {
+      const map = {
+        ONE_WEEK: '超过一周',
+        ONE_MONTH: '超过一个月',
+        THREE_MONTHS: '超过三个月',
+        ONE_YEAR: '超过一年'
+      }
+      return map[period] || '指定周期'
     },
     bizTypeText(bizType) {
       const map = {

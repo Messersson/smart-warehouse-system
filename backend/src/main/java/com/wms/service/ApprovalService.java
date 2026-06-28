@@ -46,9 +46,13 @@ public class ApprovalService {
     @Transactional
     public Map<String, Object> submit(ApprovalSubmitRequest request) {
         approvalOrderRepository.findFirstByBizTypeAndBizIdOrderByCreatedAtDesc(request.getBizType(), request.getBizId())
-                .filter(order -> "PENDING".equals(order.getStatus()))
                 .ifPresent(order -> {
-                    throw new BusinessException("There is already a pending approval for this business document");
+                    if ("PENDING".equals(order.getStatus())) {
+                        throw new BusinessException("There is already a pending approval for this business document");
+                    }
+                    if ("APPROVED".equals(order.getStatus())) {
+                        throw new BusinessException("This business document has already been approved");
+                    }
                 });
 
         ApprovalOrder order = new ApprovalOrder();
@@ -82,6 +86,7 @@ public class ApprovalService {
     public Map<String, Object> approve(Long id, ApprovalDecisionRequest request) {
         ApprovalOrder order = approvalOrderRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("Approval order not found"));
+        ensurePending(order);
         order.setStatus("APPROVED");
         order.setApprovalComment(request.getComment());
         order.setDecidedAt(LocalDateTime.now());
@@ -95,6 +100,7 @@ public class ApprovalService {
     public Map<String, Object> reject(Long id, ApprovalDecisionRequest request) {
         ApprovalOrder order = approvalOrderRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("Approval order not found"));
+        ensurePending(order);
         order.setStatus("REJECTED");
         order.setApprovalComment(request.getComment());
         order.setDecidedAt(LocalDateTime.now());
@@ -102,6 +108,12 @@ public class ApprovalService {
         saveRecord(saved.getId(), "REJECT", defaultText(request.getOperatorName(), "Approver"), request.getComment());
         updateLinkedBizApprovalStatus(saved, "REJECTED");
         return toView(saved);
+    }
+
+    private void ensurePending(ApprovalOrder order) {
+        if (!"PENDING".equals(order.getStatus())) {
+            throw new BusinessException("Only pending approval orders can be processed");
+        }
     }
 
     private void updateLinkedBizApprovalStatus(ApprovalOrder approvalOrder, String status) {

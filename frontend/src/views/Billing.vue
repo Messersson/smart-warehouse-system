@@ -232,7 +232,29 @@ export default {
       this.contractForm = row ? { ...row } : { settlementCycle: 'MONTHLY', status: 'ACTIVE' }
       this.contractDialogVisible = true
     },
+    validateContract() {
+      if (!this.contractForm.customerId) {
+        this.$message.error('请选择客户')
+        return false
+      }
+      if (!this.contractForm.contractNo || !this.contractForm.contractNo.trim()) {
+        this.$message.error('请输入合同编号')
+        return false
+      }
+      if (!this.contractForm.contractName || !this.contractForm.contractName.trim()) {
+        this.$message.error('请输入合同名称')
+        return false
+      }
+      if (!this.contractForm.effectiveDate) {
+        this.$message.error('请选择生效日期')
+        return false
+      }
+      return true
+    },
     async saveContract() {
+      if (!this.validateContract()) {
+        return
+      }
       if (this.contractForm.id) {
         await put(`/billing/contracts/${this.contractForm.id}`, this.contractForm)
       } else {
@@ -254,7 +276,29 @@ export default {
     editRule(rule) {
       this.ruleForm = { ...rule }
     },
+    validateRule() {
+      if (!this.selectedContract.id) {
+        this.$message.error('请先选择合同')
+        return false
+      }
+      if (!this.ruleForm.ruleName || !this.ruleForm.ruleName.trim()) {
+        this.$message.error('请输入规则名称')
+        return false
+      }
+      if (!this.ruleForm.chargeType) {
+        this.$message.error('请选择计费类型')
+        return false
+      }
+      if (!this.ruleForm.unitName || !this.ruleForm.unitName.trim()) {
+        this.$message.error('请输入单位')
+        return false
+      }
+      return true
+    },
     async saveRule() {
+      if (!this.validateRule()) {
+        return
+      }
       if (this.ruleForm.id) {
         await put(`/billing/rules/${this.ruleForm.id}`, this.ruleForm)
       } else {
@@ -280,6 +324,14 @@ export default {
       this.generateDialogVisible = true
     },
     async generateStatement() {
+      if (!this.generateForm.contractId) {
+        this.$message.error('请选择所属合同')
+        return
+      }
+      if (!this.generateForm.statementMonth) {
+        this.$message.error('请选择账期月份')
+        return
+      }
       await post('/billing/statements/generate', this.generateForm)
       this.$message.success('账单生成成功')
       this.generateDialogVisible = false
