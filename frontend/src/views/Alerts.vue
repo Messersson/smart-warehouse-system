@@ -48,8 +48,16 @@
           {{ alertMessageText(scope.row) }}
         </template>
       </el-table-column>
-      <el-table-column prop="firstTriggeredAt" :label="labels.firstTriggeredAt" min-width="180" />
-      <el-table-column prop="lastTriggeredAt" :label="labels.lastTriggeredAt" min-width="180" />
+      <el-table-column :label="labels.firstTriggeredAt" min-width="180">
+        <template slot-scope="scope">
+          {{ formatDateTime(scope.row.firstTriggeredAt) }}
+        </template>
+      </el-table-column>
+      <el-table-column :label="labels.lastTriggeredAt" min-width="180">
+        <template slot-scope="scope">
+          {{ formatDateTime(scope.row.lastTriggeredAt) }}
+        </template>
+      </el-table-column>
       <el-table-column :label="labels.actions" width="140" fixed="right">
         <template slot-scope="scope">
           <el-button
@@ -174,6 +182,21 @@ export default {
         ONE_YEAR: '超过一年'
       }
       return map[period] || '指定周期'
+    },
+    formatDateTime(value) {
+      if (!value) {
+        return '-'
+      }
+      const text = String(value)
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)) {
+        return text
+      }
+      const date = new Date(text)
+      if (Number.isNaN(date.getTime())) {
+        return text
+      }
+      const pad = item => String(item).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
     },
     bizTypeText(bizType) {
       const map = {

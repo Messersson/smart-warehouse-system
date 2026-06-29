@@ -46,6 +46,7 @@ public class ApiSecurityInterceptor implements HandlerInterceptor {
         API_MENU_PATHS.put("/api/products", List.of("/master/products"));
         API_MENU_PATHS.put("/api/inbounds", List.of("/inbounds"));
         API_MENU_PATHS.put("/api/outbounds", List.of("/outbounds"));
+        API_MENU_PATHS.put("/api/virtual-platform", List.of("/inbounds"));
         API_MENU_PATHS.put("/api/stocks", List.of("/stocks"));
         API_MENU_PATHS.put("/api/alerts", List.of("/alerts"));
         API_MENU_PATHS.put("/api/notifications", List.of("/alerts"));

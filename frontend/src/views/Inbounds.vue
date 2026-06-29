@@ -250,27 +250,92 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog title="货物码标签" :visible.sync="cargoCodeVisible" width="920px">
-      <div v-if="cargoCodeItem.id" class="cargo-code-preview">
-        <div class="cargo-code-label" ref="cargoCodeLabel">
-          <div class="cargo-code-title">{{ cargoCodeItem.productName }}</div>
-          <div class="cargo-code-meta">
-            作业 {{ cargoCodeItem.operationCode || cargoCodeItem.orderNo || '-' }}
+    <el-dialog title="商品面单与货物码" :visible.sync="cargoCodeVisible" width="1080px">
+      <div v-if="cargoCodeItem.id" class="waybill-builder">
+        <div class="waybill-preview-panel">
+          <div class="waybill-sheet" ref="cargoCodeLabel">
+            <div class="waybill-header">
+              <div>
+                <div class="waybill-title">商品面单</div>
+                <div class="waybill-time">{{ cargoWaybillCreatedAt }}</div>
+              </div>
+              <div class="waybill-brand">WMS</div>
+            </div>
+            <div class="waybill-route">
+              <span>{{ routeSegment(cargoCodeItem.operationCode || cargoCodeItem.orderNo, 0) }}</span>
+              <span>{{ routeSegment(cargoCodeItem.skuCode, 1) }}</span>
+              <span>{{ routeSegment(cargoCodeItem.cargoCode, 2) }}</span>
+            </div>
+            <div class="waybill-barcode">
+              <div v-if="cargoCodeSvg" class="code-svg-box" v-html="cargoCodeSvg"></div>
+              <div v-else class="code-render-placeholder">
+                {{ cargoCodeRenderLoading ? '码图形生成中...' : cargoCodeRenderError || '暂无码图形' }}
+              </div>
+              <div class="cargo-code-value">{{ cargoCodeItem.cargoCode }}</div>
+            </div>
+            <div class="waybill-row">
+              <div class="waybill-row-label">寄</div>
+              <div class="waybill-row-body">
+                <div class="waybill-person">
+                  <strong>{{ cargoWaybillForm.senderName || '-' }}</strong>
+                  <span>{{ cargoWaybillForm.senderPhone || '-' }}</span>
+                </div>
+                <div class="waybill-address">{{ cargoWaybillForm.senderAddress || '-' }}</div>
+              </div>
+            </div>
+            <div class="waybill-row receiver">
+              <div class="waybill-row-label">收</div>
+              <div class="waybill-row-body">
+                <div class="waybill-person">
+                  <strong>{{ cargoWaybillForm.receiverName || '-' }}</strong>
+                  <span>{{ cargoWaybillForm.receiverPhone || '-' }}</span>
+                </div>
+                <div class="waybill-address">{{ cargoWaybillForm.receiverAddress || '-' }}</div>
+              </div>
+            </div>
+            <div class="waybill-product">
+              <div>
+                <div class="waybill-product-title">{{ cargoCodeItem.productName }}</div>
+                <div class="waybill-product-meta">
+                  {{ cargoCodeItem.skuCode }} / {{ cargoCodeItem.batchNo || '-' }}
+                </div>
+                <div class="waybill-product-meta">
+                  库位 {{ cargoCodeItem.locationFullName || cargoCodeItem.locationCode || resolveLocationText(cargoCodeItem.locationId) }}
+                </div>
+              </div>
+              <div class="waybill-weight">{{ cargoCodeItem.qualifiedQty || cargoCodeItem.actualQty || cargoCodeItem.expectedQty || 0 }} 件</div>
+            </div>
+            <div class="waybill-remark">
+              <strong>备注：</strong>{{ cargoWaybillForm.remark || '-' }}
+            </div>
           </div>
-          <div class="cargo-code-meta">
-            库位 {{ cargoCodeItem.locationFullName || cargoCodeItem.locationCode || resolveLocationText(cargoCodeItem.locationId) }}
-          </div>
-          <div class="cargo-code-meta">
-            {{ cargoCodeItem.skuCode }} / {{ cargoCodeItem.batchNo || '-' }}
-          </div>
-          <div v-if="cargoCodeSvg" class="code-svg-box" v-html="cargoCodeSvg"></div>
-          <div v-else class="code-render-placeholder">
-            {{ cargoCodeRenderLoading ? '码图形生成中...' : cargoCodeRenderError || '暂无码图形' }}
-          </div>
-          <div class="cargo-code-value">{{ cargoCodeItem.cargoCode }}</div>
-          <div class="cargo-code-meta">
-            {{ platformText(cargoCodeItem.externalPlatform) }} / {{ cargoCodeItem.externalCode || '无外部码' }}
-          </div>
+        </div>
+        <div class="waybill-form-panel">
+          <div class="waybill-form-tip">系统已按入库单自动生成面单信息，可在打印前临时修改。</div>
+          <el-form :model="cargoWaybillForm" label-width="120px">
+            <el-form-item label="发件人">
+              <el-input v-model="cargoWaybillForm.senderName" placeholder="系统自动生成，可修改" />
+            </el-form-item>
+            <el-form-item label="发件人电话">
+              <el-input v-model="cargoWaybillForm.senderPhone" placeholder="系统自动生成，可修改" />
+            </el-form-item>
+            <el-form-item label="发件人地址">
+              <el-input v-model="cargoWaybillForm.senderAddress" type="textarea" :rows="2" placeholder="系统自动生成，可修改" />
+            </el-form-item>
+            <el-divider />
+            <el-form-item label="收件人">
+              <el-input v-model="cargoWaybillForm.receiverName" placeholder="系统自动生成，可修改" />
+            </el-form-item>
+            <el-form-item label="收件人电话">
+              <el-input v-model="cargoWaybillForm.receiverPhone" placeholder="系统自动生成，可修改" />
+            </el-form-item>
+            <el-form-item label="收货地址">
+              <el-input v-model="cargoWaybillForm.receiverAddress" type="textarea" :rows="3" placeholder="系统自动生成，可修改" />
+            </el-form-item>
+            <el-form-item label="备注">
+              <el-input v-model="cargoWaybillForm.remark" type="textarea" :rows="3" placeholder="系统自动生成，可修改" />
+            </el-form-item>
+          </el-form>
         </div>
       </div>
       <span slot="footer">
@@ -288,7 +353,7 @@
           :disabled="!cargoCodeItem.putawayScanConfirmed || !!cargoCodeItem.outboundOrderId"
           @click="transferCargoCodeToOutbound(cargoCodeRawContent(cargoCodeItem))"
         >直接出库</el-button>
-        <el-button type="primary" :loading="cargoCodeRenderLoading" :disabled="!cargoCodeSvg" @click="printCargoCodeLabel">打印标签</el-button>
+        <el-button type="primary" :loading="cargoCodeRenderLoading" :disabled="!cargoCodeSvg" @click="printCargoCodeLabel">打印面单</el-button>
       </span>
     </el-dialog>
 
@@ -463,6 +528,16 @@ export default {
       quickCreateTarget: null,
       currentRow: {},
       cargoCodeItem: {},
+      cargoWaybillCreatedAt: '',
+      cargoWaybillForm: {
+        senderName: '',
+        senderPhone: '',
+        senderAddress: '',
+        receiverName: '',
+        receiverPhone: '',
+        receiverAddress: '',
+        remark: ''
+      },
       form: {
         orderNo: '',
         warehouseId: null,
@@ -582,18 +657,17 @@ export default {
       const records = row.cargoCodeRecords || []
       const latestRecord = records.length ? records[records.length - 1] : null
       this.cargoCodeItem = {
-        ...row,
+        ...this.mergeWaybillOrderContext(row),
         operationCode: row.operationCode || (latestRecord && latestRecord.operationCode),
         operationType: row.operationType || (latestRecord && latestRecord.operationType),
         locationCode: row.locationCode || (latestRecord && latestRecord.locationCode),
         locationName: row.locationName || (latestRecord && latestRecord.locationName),
         zoneName: row.zoneName || (latestRecord && latestRecord.zoneName)
       }
+      this.cargoWaybillCreatedAt = this.formatNow()
+      this.cargoWaybillForm = this.buildCargoWaybillForm(this.cargoCodeItem)
       this.cargoCodeVisible = true
-      this.cargoCodeSvg = this.savedCargoCodeSvg(this.cargoCodeItem)
-      if (this.cargoCodeItem.cargoCodeType === 'BAR_CODE' || !this.cargoCodeSvg) {
-        await this.renderCargoCode(this.cargoCodeItem)
-      }
+      await this.renderWaybillBarcode(this.cargoCodeItem)
     },
     async openSavedCargoCode(record) {
       this.cargoCodeItem = {
@@ -615,12 +689,10 @@ export default {
         externalCode: record.externalCode,
         cargoCodeRecords: [record]
       }
-      this.cargoCodeSvg = record.svgContent || ''
-      this.cargoCodeRenderError = this.cargoCodeSvg ? '' : '该记录未保存码图形'
+      this.cargoWaybillCreatedAt = this.formatNow()
+      this.cargoWaybillForm = this.buildCargoWaybillForm(this.cargoCodeItem)
       this.cargoCodeVisible = true
-      if (this.cargoCodeItem.cargoCodeType === 'BAR_CODE') {
-        await this.renderCargoCode(this.cargoCodeItem)
-      }
+      await this.renderWaybillBarcode(this.cargoCodeItem)
     },
     async openCargoCodeRecords() {
       this.cargoCodeRecordsVisible = true
@@ -662,6 +734,33 @@ export default {
           this.cargoCodeSvg = buildCode39Svg(row.cargoCode)
         }
         this.cargoCodeRenderError = this.cargoCodeSvg ? '' : error.message || '码图形生成失败'
+      } finally {
+        this.cargoCodeRenderLoading = false
+      }
+    },
+    async renderWaybillBarcode(row) {
+      this.cargoCodeSvg = ''
+      this.cargoCodeRenderError = ''
+      const rawContent = this.waybillBarcodeContent(row)
+      if (!rawContent) {
+        this.cargoCodeRenderError = '条形码内容为空'
+        return
+      }
+      try {
+        this.cargoCodeRenderLoading = true
+        const response = await post('/scan/render-code', {
+          rawContent,
+          scanFormat: 'BAR_CODE',
+          width: 720,
+          height: 180
+        })
+        this.cargoCodeSvg = response.data && response.data.svg ? response.data.svg : ''
+        if (!this.cargoCodeSvg) {
+          this.cargoCodeRenderError = '条形码生成失败'
+        }
+      } catch (error) {
+        this.cargoCodeSvg = buildCode39Svg(rawContent)
+        this.cargoCodeRenderError = this.cargoCodeSvg ? '' : error.message || '条形码生成失败'
       } finally {
         this.cargoCodeRenderLoading = false
       }
@@ -825,6 +924,27 @@ export default {
       }
       return records[records.length - 1].svgContent || row.cargoCodeSvg || ''
     },
+    waybillBarcodeContent(row) {
+      return row && (row.cargoCode || row.externalCode || row.skuCode || row.cargoCodeContent) || ''
+    },
+    mergeWaybillOrderContext(item) {
+      const order = this.currentRow || {}
+      return {
+        ...item,
+        orderNo: item.orderNo || order.orderNo,
+        operationCode: item.operationCode || order.orderNo,
+        warehouseId: item.warehouseId || order.warehouseId,
+        warehouseName: item.warehouseName || order.warehouseName,
+        supplierId: item.supplierId || order.supplierId,
+        supplierName: item.supplierName || order.supplierName,
+        ownerId: item.ownerId || order.ownerId,
+        customerId: item.customerId || order.customerId,
+        customerName: item.customerName || order.customerName,
+        receiverName: item.receiverName || order.receiverName,
+        receiverPhone: item.receiverPhone || order.receiverPhone,
+        orderRemark: item.orderRemark || order.remark
+      }
+    },
     addItem() {
       const item = createItem()
       if (this.selectedSupplier && this.selectedSupplier.platformType) {
@@ -930,7 +1050,11 @@ export default {
       if (!this.cargoCodeItem.id) {
         return
       }
-      const html = this.$refs.cargoCodeLabel ? this.$refs.cargoCodeLabel.outerHTML : ''
+      const missing = this.validateCargoWaybillForm()
+      if (missing) {
+        this.$message.error(`请填写${missing}`)
+        return
+      }
       const frame = document.createElement('iframe')
       frame.style.position = 'fixed'
       frame.style.right = '0'
@@ -948,19 +1072,77 @@ export default {
             <meta charset="utf-8">
             <title>${escapeHtml(this.cargoCodeItem.cargoCode)}</title>
             <style>
-              @page { size: 78mm 52mm; margin: 4mm; }
+              @page { size: 100mm 150mm; margin: 5mm; }
               * { box-sizing: border-box; }
-              body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: #111827; }
-              .cargo-code-label { width: 70mm; min-height: 44mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; }
-              .cargo-code-title { max-width: 100%; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-              .cargo-code-meta { max-width: 100%; font-size: 10px; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-              .cargo-code-value { font-size: 10px; font-family: Consolas, monospace; letter-spacing: 0.06em; }
-              .code-svg-box { max-width: 66mm; max-height: 28mm; overflow: hidden; display: flex; justify-content: center; }
-              .code-svg-box svg { max-width: 66mm; max-height: 28mm; width: auto; height: auto; }
-              .code-render-placeholder { width: 62mm; min-height: 22mm; display: flex; align-items: center; justify-content: center; border: 1px solid #d8dee6; font-size: 9px; color: #64748b; }
+              body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: #111827; background: #ffffff; }
+              .sheet { width: 90mm; min-height: 140mm; border: 1px solid #111827; border-radius: 2mm; overflow: hidden; background: #fff; }
+              .header { height: 16mm; padding: 3mm 4mm; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #111827; }
+              .title { font-size: 16px; font-weight: 700; line-height: 1.2; }
+              .time { margin-top: 1mm; font-size: 10px; color: #374151; }
+              .brand { font-size: 18px; font-weight: 800; letter-spacing: 0.08em; }
+              .route { height: 16mm; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; text-align: center; border-bottom: 1px solid #111827; font-size: 24px; font-weight: 800; }
+              .route span + span { border-left: 1px solid #d1d5db; }
+              .barcode { height: 28mm; padding: 2mm 4mm 1mm; display: flex; flex-direction: column; align-items: center; justify-content: center; border-bottom: 1px solid #111827; }
+              .barcode svg { width: 78mm; height: 18mm; display: block; }
+              .barcode-code { margin-top: 1mm; font-size: 11px; font-family: Consolas, monospace; letter-spacing: 0.08em; }
+              .row { min-height: 23mm; display: grid; grid-template-columns: 11mm 1fr; border-bottom: 1px solid #111827; }
+              .mark { display: flex; align-items: center; justify-content: center; border-right: 1px solid #111827; font-size: 22px; font-weight: 800; }
+              .content { padding: 3mm; }
+              .person { display: flex; gap: 5mm; align-items: baseline; font-size: 15px; font-weight: 700; }
+              .person span { font-size: 12px; font-weight: 500; }
+              .address { margin-top: 2mm; font-size: 13px; line-height: 1.42; word-break: break-all; }
+              .receiver .mark { font-size: 24px; }
+              .product { min-height: 22mm; padding: 3mm 4mm; display: flex; justify-content: space-between; gap: 4mm; border-bottom: 1px solid #111827; }
+              .product-name { font-size: 14px; font-weight: 700; word-break: break-all; }
+              .product-meta { margin-top: 2mm; font-size: 12px; color: #374151; word-break: break-all; }
+              .weight { min-width: 18mm; text-align: right; font-size: 13px; font-weight: 700; }
+              .remark { min-height: 16mm; padding: 3mm 4mm; font-size: 12px; line-height: 1.45; word-break: break-all; }
+              .remark strong { font-size: 13px; }
             </style>
           </head>
-          <body>${html}</body>
+          <body>
+            <div class="sheet">
+              <div class="header">
+                <div>
+                  <div class="title">商品面单</div>
+                  <div class="time">${escapeHtml(this.cargoWaybillCreatedAt)}</div>
+                </div>
+                <div class="brand">WMS</div>
+              </div>
+              <div class="route">
+                <span>${escapeHtml(this.routeSegment(this.cargoCodeItem.operationCode || this.cargoCodeItem.orderNo, 0))}</span>
+                <span>${escapeHtml(this.routeSegment(this.cargoCodeItem.skuCode, 1))}</span>
+                <span>${escapeHtml(this.routeSegment(this.cargoCodeItem.cargoCode, 2))}</span>
+              </div>
+              <div class="barcode">
+                ${this.cargoCodeSvg}
+                <div class="barcode-code">${escapeHtml(this.cargoCodeItem.cargoCode)}</div>
+              </div>
+              <div class="row">
+                <div class="mark">寄</div>
+                <div class="content">
+                  <div class="person"><strong>${escapeHtml(this.cargoWaybillForm.senderName)}</strong><span>${escapeHtml(this.cargoWaybillForm.senderPhone)}</span></div>
+                  <div class="address">${escapeHtml(this.cargoWaybillForm.senderAddress)}</div>
+                </div>
+              </div>
+              <div class="row receiver">
+                <div class="mark">收</div>
+                <div class="content">
+                  <div class="person"><strong>${escapeHtml(this.cargoWaybillForm.receiverName)}</strong><span>${escapeHtml(this.cargoWaybillForm.receiverPhone)}</span></div>
+                  <div class="address">${escapeHtml(this.cargoWaybillForm.receiverAddress)}</div>
+                </div>
+              </div>
+              <div class="product">
+                <div>
+                  <div class="product-name">${escapeHtml(this.cargoCodeItem.productName)}</div>
+                  <div class="product-meta">${escapeHtml(this.cargoCodeItem.skuCode)} / ${escapeHtml(this.cargoCodeItem.batchNo || '-')}</div>
+                  <div class="product-meta">库位 ${escapeHtml(this.cargoCodeItem.locationFullName || this.cargoCodeItem.locationCode || this.resolveLocationText(this.cargoCodeItem.locationId))}</div>
+                </div>
+                <div class="weight">${escapeHtml(this.cargoCodeItem.qualifiedQty || this.cargoCodeItem.actualQty || this.cargoCodeItem.expectedQty || 0)} 件</div>
+              </div>
+              <div class="remark"><strong>备注：</strong>${escapeHtml(this.cargoWaybillForm.remark || '-')}</div>
+            </div>
+          </body>
         </html>
       `)
       doc.close()
@@ -969,6 +1151,70 @@ export default {
         frame.contentWindow.print()
         setTimeout(() => document.body.removeChild(frame), 500)
       }, 100)
+    },
+    buildCargoWaybillForm(item) {
+      const warehouse = (this.lookups.warehouses || []).find(row => row.id === item.warehouseId) || {}
+      const supplier = (this.lookups.suppliers || []).find(row => row.id === item.supplierId) || {}
+      const owner = (this.lookups.owners || []).find(row => row.id === item.ownerId) || {}
+      const customer = (this.lookups.customers || []).find(row => row.id === item.customerId) || {}
+      const senderAddress = [warehouse.province, warehouse.city, warehouse.district, warehouse.address]
+        .filter(Boolean)
+        .join('')
+      const receiverAddress = item.receiverAddress || customer.address || supplier.address || owner.address || ''
+      return {
+        senderName: warehouse.contactName || warehouse.warehouseName || item.warehouseName || '仓库发货部',
+        senderPhone: warehouse.contactPhone || '未维护',
+        senderAddress: senderAddress || item.warehouseName || warehouse.warehouseName || '仓库地址未维护',
+        receiverName: item.receiverName || customer.contactName || customer.customerName || supplier.contactName || supplier.supplierName || owner.contactName || owner.ownerName || '',
+        receiverPhone: item.receiverPhone || customer.contactPhone || supplier.contactPhone || owner.contactPhone || '未维护',
+        receiverAddress: receiverAddress || item.customerName || item.supplierName || item.warehouseName || '收货地址未维护',
+        remark: this.defaultWaybillRemark(item)
+      }
+    },
+    defaultWaybillRemark(item) {
+      return this.cleanWaybillRemark(item.remark || item.orderRemark || '')
+    },
+    cleanWaybillRemark(value) {
+      const text = String(value || '').trim()
+      if (!text) {
+        return ''
+      }
+      const match = text.match(/(?:^|[;；]\s*)remark=([^;；]*)/i)
+      if (match) {
+        const remark = match[1].trim()
+        return remark === '-' ? '' : remark
+      }
+      return text
+    },
+    validateCargoWaybillForm() {
+      const checks = [
+        ['发件人', this.cargoWaybillForm.senderName],
+        ['发件人联系方式', this.cargoWaybillForm.senderPhone],
+        ['发件人地址', this.cargoWaybillForm.senderAddress],
+        ['收件人', this.cargoWaybillForm.receiverName],
+        ['收件人联系方式', this.cargoWaybillForm.receiverPhone],
+        ['收货地址', this.cargoWaybillForm.receiverAddress]
+      ]
+      const missing = checks.find(([, value]) => !value || !String(value).trim())
+      return missing ? missing[0] : ''
+    },
+    formatNow() {
+      const date = new Date()
+      const pad = value => String(value).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    },
+    routeSegment(value, index) {
+      const source = String(value || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+      if (!source) {
+        return index === 0 ? 'WMS' : '-'
+      }
+      if (index === 0) {
+        return source.slice(0, 3) || '-'
+      }
+      if (index === 1) {
+        return source.slice(3, 7) || source.slice(0, 4) || '-'
+      }
+      return source.slice(-3) || '-'
     }
   }
 }
@@ -996,68 +1242,115 @@ export default {
   padding-right: 0;
 }
 
-.cargo-code-preview {
-  display: flex;
-  justify-content: center;
+.waybill-builder {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
 }
 
-.cargo-code-label {
-  width: 100%;
-  min-height: 280px;
-  padding: 18px;
+.waybill-preview-panel {
+  padding: 16px;
   border: 1px solid #d8dee6;
   border-radius: 8px;
-  background: #ffffff;
+  background: #f8fafc;
+}
+
+.waybill-sheet {
+  width: 100%;
+  max-width: 390px;
+  min-height: 600px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #111827;
+  border-radius: 8px;
+  color: #111827;
+}
+
+.waybill-header {
+  min-height: 58px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #111827;
+}
+
+.waybill-title {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+}
+
+.waybill-time {
+  margin-top: 2px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.waybill-brand {
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.waybill-route {
+  height: 58px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  text-align: center;
+  border-bottom: 1px solid #111827;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.waybill-route span + span {
+  border-left: 1px solid #d1d5db;
+}
+
+.waybill-barcode {
+  min-height: 112px;
+  padding: 10px 16px 8px;
   display: flex;
   align-items: center;
   flex-direction: column;
   justify-content: center;
-  gap: 8px;
-}
-
-.cargo-code-title {
-  max-width: 100%;
-  color: #111827;
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cargo-code-meta,
-.cargo-code-value {
-  max-width: 100%;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 18px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cargo-code-value {
-  color: #111827;
-  font-family: Consolas, monospace;
-  letter-spacing: 0.06em;
+  border-bottom: 1px solid #111827;
 }
 
 .code-svg-box {
-  max-width: 100%;
+  width: 100%;
   display: flex;
   justify-content: center;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .code-svg-box ::v-deep svg {
-  max-width: none;
-  height: auto;
+  width: 100%;
+  max-width: 330px;
+  height: 74px;
+}
+
+.cargo-code-value {
+  max-width: 100%;
+  margin-top: 4px;
+  color: #111827;
+  font-size: 13px;
+  line-height: 18px;
+  font-family: Consolas, monospace;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .code-render-placeholder {
   width: 100%;
-  min-height: 160px;
+  min-height: 74px;
   border: 1px solid #d8dee6;
   border-radius: 8px;
   background: #f8fafc;
@@ -1065,5 +1358,102 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.waybill-row {
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  border-bottom: 1px solid #111827;
+}
+
+.waybill-row-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid #111827;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.waybill-row.receiver .waybill-row-label {
+  font-size: 26px;
+}
+
+.waybill-row-body {
+  padding: 12px;
+}
+
+.waybill-person {
+  display: flex;
+  gap: 18px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.waybill-person strong {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.waybill-person span {
+  color: #374151;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.waybill-address {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  word-break: break-all;
+}
+
+.waybill-product {
+  min-height: 96px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #111827;
+}
+
+.waybill-product-title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.waybill-product-meta {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 18px;
+  word-break: break-all;
+}
+
+.waybill-weight {
+  min-width: 68px;
+  text-align: right;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+.waybill-remark {
+  min-height: 64px;
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 20px;
+  word-break: break-all;
+}
+
+.waybill-remark strong {
+  font-size: 14px;
+}
+
+.waybill-form-panel {
+  padding-left: 4px;
 }
 </style>

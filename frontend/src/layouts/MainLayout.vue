@@ -34,6 +34,10 @@
           <i class="el-icon-download"></i>
           <span slot="title">入库管理</span>
         </el-menu-item>
+        <el-menu-item v-if="canAccess('/virtual-platforms', ['/inbounds'])" index="/virtual-platforms">
+          <i class="el-icon-shopping-cart-2"></i>
+          <span slot="title">平台供货入库</span>
+        </el-menu-item>
         <el-menu-item v-if="canAccess('/cargo-code-records', ['/inbounds'])" index="/cargo-code-records">
           <i class="el-icon-printer"></i>
           <span slot="title">码记录打印</span>
@@ -161,13 +165,16 @@ export default {
 <style scoped>
 .layout-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   background: #f3f5f9;
+  overflow: hidden;
 }
 
 .layout-sidebar {
   width: 232px;
   flex: 0 0 232px;
+  min-height: 0;
   background: #0b1220;
   color: #ffffff;
   border-right: 1px solid #101827;
@@ -259,6 +266,7 @@ export default {
 
 .layout-main {
   min-width: 0;
+  min-height: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -266,6 +274,7 @@ export default {
 
 .layout-header {
   height: 64px;
+  flex: 0 0 64px;
   padding: 0 24px;
   display: flex;
   justify-content: space-between;
@@ -353,11 +362,15 @@ export default {
   min-height: 0;
   flex: 1;
   padding: 18px 20px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 @media (max-width: 960px) {
   .layout-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
     flex-direction: column;
   }
 
@@ -390,6 +403,7 @@ export default {
 
   .layout-content {
     padding: 12px;
+    overflow: visible;
   }
 }
 </style>

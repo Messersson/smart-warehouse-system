@@ -16,6 +16,7 @@ import StockTakes from '../views/StockTakes.vue'
 import Billing from '../views/Billing.vue'
 import Approvals from '../views/Approvals.vue'
 import Exceptions from '../views/Exceptions.vue'
+import VirtualPlatforms from '../views/VirtualPlatforms.vue'
 
 Vue.use(Router)
 
@@ -59,6 +60,7 @@ const routes = [
         meta: { title: 'PDA扫码台', accessFallback: ['/inbounds', '/outbounds', '/stocks'] }
       },
       { path: 'outbounds', component: Outbounds, meta: { title: '出库管理' } },
+      { path: 'virtual-platforms', component: VirtualPlatforms, meta: { title: '平台供货入库', accessFallback: ['/inbounds'] } },
       { path: 'stocks', component: Stocks, meta: { title: '库存管理' } },
       { path: 'alerts', component: Alerts, meta: { title: '预警中心' } },
       { path: 'permissions', component: Permissions, meta: { title: '权限管理' } },

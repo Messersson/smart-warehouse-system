@@ -168,29 +168,93 @@
     </el-dialog>
 
     <el-dialog
-      title="货物条码标签"
+      title="商品面单与条形码"
       :visible.sync="barcodeVisible"
-      width="520px"
+      width="920px"
       class="barcode-dialog"
     >
-      <div v-if="barcodeProduct.id" class="barcode-preview">
-        <div class="barcode-label" ref="barcodeLabel">
-          <div class="barcode-product-name">{{ barcodeProduct.productName }}</div>
-          <div class="barcode-product-meta">{{ barcodeProduct.skuCode }} / {{ barcodeProduct.productSpec || '-' }}</div>
-          <div class="barcode-svg-box" v-html="barcodeSvg"></div>
-          <div class="barcode-value">{{ barcodeProduct.barcode }}</div>
+      <div v-if="barcodeProduct.id" class="waybill-builder">
+        <div class="waybill-preview-panel">
+          <div class="waybill-sheet" ref="barcodeLabel">
+            <div class="waybill-header">
+              <div>
+                <div class="waybill-title">商品面单</div>
+                <div class="waybill-time">{{ waybillCreatedAt }}</div>
+              </div>
+              <div class="waybill-brand">WMS</div>
+            </div>
+            <div class="waybill-route">
+              <span>{{ routeSegment(barcodeProduct.skuCode, 0) }}</span>
+              <span>{{ routeSegment(barcodeProduct.skuCode, 1) }}</span>
+              <span>{{ routeSegment(barcodeProduct.skuCode, 2) }}</span>
+            </div>
+            <div class="waybill-barcode">
+              <div class="barcode-svg-box" v-html="barcodeSvg"></div>
+              <div class="barcode-value">{{ barcodeProduct.barcode }}</div>
+            </div>
+            <div class="waybill-row">
+              <div class="waybill-row-label">寄</div>
+              <div class="waybill-row-body">
+                <div class="waybill-person">
+                  <strong>{{ waybillForm.senderName || '-' }}</strong>
+                  <span>{{ waybillForm.senderPhone || '-' }}</span>
+                </div>
+                <div class="waybill-address">{{ waybillForm.senderAddress || '-' }}</div>
+              </div>
+            </div>
+            <div class="waybill-row receiver">
+              <div class="waybill-row-label">收</div>
+              <div class="waybill-row-body">
+                <div class="waybill-person">
+                  <strong>{{ waybillForm.receiverName || '-' }}</strong>
+                  <span>{{ waybillForm.receiverPhone || '-' }}</span>
+                </div>
+                <div class="waybill-address">{{ waybillForm.receiverAddress || '-' }}</div>
+              </div>
+            </div>
+            <div class="waybill-product">
+              <div>
+                <div class="waybill-product-title">{{ barcodeProduct.productName }}</div>
+                <div class="waybill-product-meta">{{ barcodeProduct.skuCode }} / {{ barcodeProduct.productSpec || '-' }}</div>
+              </div>
+              <div class="waybill-weight">{{ barcodeProduct.weightKg || 0 }} kg</div>
+            </div>
+          </div>
         </div>
-        <el-alert
-          v-if="barcodeError"
-          type="warning"
-          :closable="false"
-          show-icon
-          :title="barcodeError"
-        />
+        <div class="waybill-form-panel">
+          <el-form :model="waybillForm" label-width="110px">
+            <el-form-item label="发件人">
+              <el-input v-model="waybillForm.senderName" placeholder="请输入发件人" />
+            </el-form-item>
+            <el-form-item label="发件人电话">
+              <el-input v-model="waybillForm.senderPhone" placeholder="请输入发件人联系方式" />
+            </el-form-item>
+            <el-form-item label="发件人地址">
+              <el-input v-model="waybillForm.senderAddress" type="textarea" :rows="2" placeholder="请输入发件人地址" />
+            </el-form-item>
+            <el-divider />
+            <el-form-item label="收件人">
+              <el-input v-model="waybillForm.receiverName" placeholder="请输入收件人" />
+            </el-form-item>
+            <el-form-item label="收件人电话">
+              <el-input v-model="waybillForm.receiverPhone" placeholder="请输入收件人联系方式" />
+            </el-form-item>
+            <el-form-item label="收货地址">
+              <el-input v-model="waybillForm.receiverAddress" type="textarea" :rows="3" placeholder="请输入收货地址" />
+            </el-form-item>
+          </el-form>
+          <el-alert
+            v-if="barcodeError"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="barcodeError"
+          />
+        </div>
       </div>
       <span slot="footer">
-        <el-button @click="downloadBarcodeSvg">下载 SVG</el-button>
-        <el-button type="primary" :disabled="!!barcodeError" @click="printBarcodeLabel">打印标签</el-button>
+        <el-button @click="downloadBarcodeSvg">下载条码 SVG</el-button>
+        <el-button type="primary" :disabled="!!barcodeError" @click="printBarcodeLabel">打印面单</el-button>
       </span>
     </el-dialog>
   </div>
@@ -345,6 +409,15 @@ export default {
       barcodeVisible: false,
       barcodeGeneratingId: null,
       barcodeProduct: {},
+      waybillCreatedAt: '',
+      waybillForm: {
+        senderName: '',
+        senderPhone: '',
+        senderAddress: '',
+        receiverName: '',
+        receiverPhone: '',
+        receiverAddress: ''
+      },
       form: {},
       labels
     }
@@ -576,6 +649,8 @@ export default {
         }
       }
       this.barcodeProduct = JSON.parse(JSON.stringify(product))
+      this.waybillCreatedAt = this.formatNow()
+      this.waybillForm = this.buildDefaultWaybillForm(product)
       this.barcodeVisible = true
     },
     downloadBarcodeSvg() {
@@ -598,6 +673,11 @@ export default {
         this.$message.error(this.barcodeError || '条码生成失败')
         return
       }
+      const missing = this.validateWaybillForm()
+      if (missing) {
+        this.$message.error(`请填写${missing}`)
+        return
+      }
       const frame = document.createElement('iframe')
       frame.style.position = 'fixed'
       frame.style.right = '0'
@@ -616,22 +696,71 @@ export default {
             <meta charset="utf-8">
             <title>${escapeHtml(this.barcodeProduct.barcode)}</title>
             <style>
-              @page { size: 70mm 42mm; margin: 4mm; }
+              @page { size: 100mm 150mm; margin: 5mm; }
               * { box-sizing: border-box; }
-              body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: #111827; }
-              .label { width: 62mm; min-height: 34mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; }
-              .name { width: 100%; text-align: center; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-              .meta { width: 100%; text-align: center; font-size: 10px; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-              svg { max-width: 58mm; height: 22mm; }
-              .code { font-size: 10px; letter-spacing: 0.08em; }
+              body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: #111827; background: #fff; }
+              .sheet { width: 90mm; min-height: 140mm; border: 1px solid #111827; border-radius: 2mm; overflow: hidden; background: #fff; }
+              .header { height: 16mm; padding: 3mm 4mm; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #111827; }
+              .title { font-size: 16px; font-weight: 700; line-height: 1.2; }
+              .time { margin-top: 1mm; font-size: 10px; color: #374151; }
+              .brand { font-size: 18px; font-weight: 800; letter-spacing: 0.08em; }
+              .route { height: 16mm; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; text-align: center; border-bottom: 1px solid #111827; font-size: 24px; font-weight: 800; }
+              .route span + span { border-left: 1px solid #d1d5db; }
+              .barcode { height: 30mm; padding: 2mm 4mm 1mm; display: flex; flex-direction: column; align-items: center; justify-content: center; border-bottom: 1px solid #111827; }
+              .barcode svg { width: 78mm; height: 20mm; display: block; }
+              .barcode-code { margin-top: 1mm; font-size: 12px; font-family: Consolas, monospace; letter-spacing: 0.08em; }
+              .row { min-height: 25mm; display: grid; grid-template-columns: 11mm 1fr; border-bottom: 1px solid #111827; }
+              .mark { display: flex; align-items: center; justify-content: center; border-right: 1px solid #111827; font-size: 22px; font-weight: 800; }
+              .content { padding: 3mm; }
+              .person { display: flex; gap: 5mm; align-items: baseline; font-size: 15px; font-weight: 700; }
+              .person span { font-size: 12px; font-weight: 500; }
+              .address { margin-top: 2mm; font-size: 13px; line-height: 1.45; word-break: break-all; }
+              .receiver .mark { font-size: 24px; }
+              .product { min-height: 22mm; padding: 3mm 4mm; display: flex; justify-content: space-between; gap: 4mm; }
+              .product-name { font-size: 14px; font-weight: 700; }
+              .product-meta { margin-top: 2mm; font-size: 12px; color: #374151; }
+              .weight { min-width: 20mm; text-align: right; font-size: 13px; font-weight: 700; }
             </style>
           </head>
           <body>
-            <div class="label">
-              <div class="name">${escapeHtml(this.barcodeProduct.productName)}</div>
-              <div class="meta">${escapeHtml(this.barcodeProduct.skuCode)} / ${escapeHtml(this.barcodeProduct.productSpec || '-')}</div>
-              ${this.barcodeSvg}
-              <div class="code">${escapeHtml(this.barcodeProduct.barcode)}</div>
+            <div class="sheet">
+              <div class="header">
+                <div>
+                  <div class="title">商品面单</div>
+                  <div class="time">${escapeHtml(this.waybillCreatedAt)}</div>
+                </div>
+                <div class="brand">WMS</div>
+              </div>
+              <div class="route">
+                <span>${escapeHtml(this.routeSegment(this.barcodeProduct.skuCode, 0))}</span>
+                <span>${escapeHtml(this.routeSegment(this.barcodeProduct.skuCode, 1))}</span>
+                <span>${escapeHtml(this.routeSegment(this.barcodeProduct.skuCode, 2))}</span>
+              </div>
+              <div class="barcode">
+                ${this.barcodeSvg}
+                <div class="barcode-code">${escapeHtml(this.barcodeProduct.barcode)}</div>
+              </div>
+              <div class="row">
+                <div class="mark">寄</div>
+                <div class="content">
+                  <div class="person"><strong>${escapeHtml(this.waybillForm.senderName)}</strong><span>${escapeHtml(this.waybillForm.senderPhone)}</span></div>
+                  <div class="address">${escapeHtml(this.waybillForm.senderAddress)}</div>
+                </div>
+              </div>
+              <div class="row receiver">
+                <div class="mark">收</div>
+                <div class="content">
+                  <div class="person"><strong>${escapeHtml(this.waybillForm.receiverName)}</strong><span>${escapeHtml(this.waybillForm.receiverPhone)}</span></div>
+                  <div class="address">${escapeHtml(this.waybillForm.receiverAddress)}</div>
+                </div>
+              </div>
+              <div class="product">
+                <div>
+                  <div class="product-name">${escapeHtml(this.barcodeProduct.productName)}</div>
+                  <div class="product-meta">${escapeHtml(this.barcodeProduct.skuCode)} / ${escapeHtml(this.barcodeProduct.productSpec || '-')}</div>
+                </div>
+                <div class="weight">${escapeHtml(this.barcodeProduct.weightKg || 0)} kg</div>
+              </div>
             </div>
           </body>
         </html>
@@ -642,6 +771,46 @@ export default {
         frame.contentWindow.print()
         setTimeout(() => document.body.removeChild(frame), 500)
       }, 100)
+    },
+    buildDefaultWaybillForm(product) {
+      return {
+        senderName: '仓库发货部',
+        senderPhone: '',
+        senderAddress: '',
+        receiverName: '',
+        receiverPhone: '',
+        receiverAddress: product.remark || ''
+      }
+    },
+    validateWaybillForm() {
+      const checks = [
+        ['发件人', this.waybillForm.senderName],
+        ['发件人联系方式', this.waybillForm.senderPhone],
+        ['发件人地址', this.waybillForm.senderAddress],
+        ['收件人', this.waybillForm.receiverName],
+        ['收件人联系方式', this.waybillForm.receiverPhone],
+        ['收货地址', this.waybillForm.receiverAddress]
+      ]
+      const missing = checks.find(([, value]) => !value || !String(value).trim())
+      return missing ? missing[0] : ''
+    },
+    formatNow() {
+      const date = new Date()
+      const pad = value => String(value).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    },
+    routeSegment(value, index) {
+      const source = String(value || this.barcodeProduct.barcode || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+      if (!source) {
+        return index === 0 ? 'WMS' : '-'
+      }
+      if (index === 0) {
+        return source.slice(0, 3) || '-'
+      }
+      if (index === 1) {
+        return source.slice(3, 7) || source.slice(0, 4) || '-'
+      }
+      return source.slice(-3) || '-'
     },
     buildPlaceholder(label) {
       return `${labels.inputPrefix}${label}`
@@ -738,57 +907,194 @@ export default {
   word-break: break-all;
 }
 
-.barcode-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.waybill-builder {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
 }
 
-.barcode-label {
-  width: 100%;
-  min-height: 230px;
-  padding: 18px;
+.waybill-preview-panel {
+  padding: 16px;
+  background: #f8fafc;
   border: 1px solid #d8dee6;
   border-radius: 8px;
+}
+
+.waybill-sheet {
+  width: 100%;
+  max-width: 380px;
+  min-height: 560px;
+  margin: 0 auto;
+  overflow: hidden;
   background: #ffffff;
+  border: 1px solid #111827;
+  border-radius: 8px;
+  color: #111827;
+}
+
+.waybill-header {
+  min-height: 58px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #111827;
+}
+
+.waybill-title {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+}
+
+.waybill-time {
+  margin-top: 2px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.waybill-brand {
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.waybill-route {
+  height: 58px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  text-align: center;
+  border-bottom: 1px solid #111827;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.waybill-route span + span {
+  border-left: 1px solid #d1d5db;
+}
+
+.waybill-barcode {
+  min-height: 116px;
+  padding: 10px 16px 8px;
   display: flex;
   align-items: center;
   flex-direction: column;
   justify-content: center;
-  gap: 8px;
-}
-
-.barcode-product-name {
-  max-width: 100%;
-  color: #111827;
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.barcode-product-meta,
-.barcode-value {
-  max-width: 100%;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 18px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.barcode-value {
-  color: #111827;
-  font-family: Consolas, monospace;
-  letter-spacing: 0.06em;
+  border-bottom: 1px solid #111827;
 }
 
 .barcode-svg-box {
+  width: 100%;
+  overflow-x: hidden;
+  text-align: center;
+}
+
+.barcode-svg-box ::v-deep svg {
+  width: 100%;
+  max-width: 320px;
+  height: 78px;
+  display: inline-block;
+}
+
+.barcode-value {
   max-width: 100%;
-  overflow-x: auto;
+  margin-top: 4px;
+  color: #111827;
+  font-size: 13px;
+  line-height: 18px;
+  font-family: Consolas, monospace;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waybill-row {
+  min-height: 100px;
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  border-bottom: 1px solid #111827;
+}
+
+.waybill-row-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid #111827;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.waybill-row.receiver .waybill-row-label {
+  font-size: 26px;
+}
+
+.waybill-row-body {
+  padding: 12px;
+}
+
+.waybill-person {
+  display: flex;
+  gap: 18px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.waybill-person strong {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.waybill-person span {
+  color: #374151;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.waybill-address {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  word-break: break-all;
+}
+
+.waybill-product {
+  min-height: 82px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.waybill-product-title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.waybill-product-meta {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 18px;
+  word-break: break-all;
+}
+
+.waybill-weight {
+  min-width: 68px;
+  text-align: right;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+.waybill-form-panel {
+  padding-left: 4px;
 }
 
 @media (max-width: 760px) {
